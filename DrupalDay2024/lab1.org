@@ -1,4 +1,7 @@
 #+title: Lab1
+#+PROPERTY: header-args :results drawer
+
+Welcome to Lab1 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 
 To set up a fully functional Drupal site on a k3d Kubernetes cluster on Linux, follow these steps.
 This guide assumes you have Docker installed on your Linux system. If not, please install it first from https://docs.docker.com/engine/install/.
@@ -6,8 +9,8 @@ This guide assumes you have Docker installed on your Linux system. If not, pleas
 Each major action is broken down into steps, with each step containing the necessary commands and explanations.
 
 * Install kubectl and setup a Drupal Site on a k3d Kubernetes Cluster
-  This guide will walk you through the process of setting up a k3d Kubernetes cluster on Linux and deploying a Drupal site on it.
 
+  This guide will walk you through the process of setting up a k3d Kubernetes cluster on Linux and deploying a Drupal site on it.
 
 ** Step 0: Installing kubectl
    :PROPERTIES:
@@ -23,14 +26,22 @@ Each major action is broken down into steps, with each step containing the neces
    :PROPERTIES:
    :CUSTOM_ID: install-k3d
    :END:
+
    1. Download and install the latest version of k3d.
       #+BEGIN_SRC bash
       wget -q -O - https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
       #+END_SRC
    2. Verify the installation.
-      #+BEGIN_SRC bash
+      #+BEGIN_SRC shell
       k3d version
       #+END_SRC
+
+      #+RESULTS:
+      :results:
+      k3d version v5.7.4
+      k3s version v1.30.4-k3s1 (default)
+      :end:
+
 
 ** Step 2: Create a k3d Cluster
    :PROPERTIES:
@@ -63,6 +74,11 @@ Each major action is broken down into steps, with each step containing the neces
       helm version
       #+END_SRC
 
+      #+RESULTS:
+      :results:
+      version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
+      :end:
+
 ** Step 4: Add Bitnami Helm Chart Repository
    :PROPERTIES:
    :CUSTOM_ID: add-bitnami-repo
@@ -76,11 +92,13 @@ Each major action is broken down into steps, with each step containing the neces
       helm repo update
       #+END_SRC
 
+      NOTE: repositories are cached locally at $HOME/.cache/helm/ and configs in $HOME/.config/helm/. Check 'helm env'
+
 ** Step 5: Install Drupal
    :PROPERTIES:
    :CUSTOM_ID: install-drupal
    :END:
-   1. Deploy Drupal and MariaDB.
+   1. Deploy Drupal and MariaDB. This will use https://github.com/bitnami/charts/tree/main/bitnami/drupal
       #+BEGIN_SRC bash
       helm install my-drupal bitnami/drupal
       #+END_SRC
@@ -94,18 +112,48 @@ Each major action is broken down into steps, with each step containing the neces
       kubectl get deployments -A
       #+end_src
 
-** Step 6: Access Your Drupal Site
+** Step 6: Watch Drupal startup and get creds (not used in Lab1)
+   :PROPERTIES:
+   :CUSTOM_ID: install-drupal
+   :END:
+
+   1. If your prod setup has a LoadBalancer IP it may take a few minutes for it to be available.
+      #+BEGIN_SRC bash
+      kubectl get svc --namespace default -w my-drupal
+      #+END_SRC
+
+      #+BEGIN_SRC bash
+      export SERVICE_IP=$(kubectl get svc --namespace default my-drupal --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
+      echo "Drupal URL: http://$SERVICE_IP/"
+      #+END_SRC
+
+** Step 7: Access Your Drupal Site
    :PROPERTIES:
    :CUSTOM_ID: access-drupal
    :END:
-   1. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
+
+   1. Get your Drupal login credentials by running:
+      #+BEGIN_SRC bash
+      echo Username: user
+      echo Password: $(kubectl get secret --namespace default my-drupal -o jsonpath="{.data.drupal-password}" | base64 -d)
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      Username: user
+      Password: TnLbbXCEoN
+      :end:
+
+   2. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
       #+BEGIN_SRC bash
       DPOD=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=drupal" -o jsonpath="{.items[0].metadata.name}")
       kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 8080:8080
       #+END_SRC
+
    3. Access Drupal site at http://localhost:8080.
 
-** Step 7: Configure Drupal
+** Step 8: Configure Drupal
+
    Follow the on-screen instructions to complete the Drupal setup through your browser. You will need the database credentials, provided by Helm upon installation.
 
 * Troubleshooting
@@ -114,6 +162,13 @@ Each major action is broken down into steps, with each step containing the neces
    #+BEGIN_SRC bash
    kubectl get pods
    #+END_SRC
+
+   #+RESULTS:
+   :results:
+   NAME                         READY   STATUS    RESTARTS   AGE
+   my-drupal-84766b946f-m4pcd   1/1     Running   0          37m
+   my-drupal-mariadb-0          1/1     Running   0          37m
+   :end:
 
 ** Check Pod Logs for Errors
    #+BEGIN_SRC bash
@@ -131,9 +186,10 @@ Each major action is broken down into steps, with each step containing the neces
      #+END_SRC
 
 ** Restart the Pod if Necessary
-   #+BEGIN_SRC bash
-   kubectl delete pod <pod-name>
-   #+END_SRC
+   - Deleting the pod will recreate it
+     #+BEGIN_SRC bash
+     kubectl delete pod <pod-name>
+     #+END_SRC
 
 ** Check Kubernetes Service and Deployment Configurations
    - Services:
@@ -141,11 +197,11 @@ Each major action is broken down into steps, with each step containing the neces
      kubectl get svc
      #+END_SRC
    - Deployment Configurations:
-     #+BEGIN_SRC bash
-     kubectl get deployments <deployment-name> -o yaml
+     #+BEGIN_SRC bash :results pp
+     kubectl get deployment my-drupal -o yaml
      #+END_SRC
 
-** Expose Drupal through a NodePort or LoadBalancer Service for Easier Access
+** Bonus 1: Expose Drupal through a NodePort or LoadBalancer Service for Easier Access
    - NodePort Service:
      #+BEGIN_SRC bash
      kubectl expose deployment <deployment-name> --type=NodePort --name=drupal-service --port=80
@@ -167,7 +223,8 @@ Each major action is broken down into steps, with each step containing the neces
       #+END_SRC
    2. Delete unused docker leftovers
       #+BEGIN_SRC bash
-      docker system prune
+      echo y |docker system prune
       #+END_SRC
+
 
 Congratulations, you have now deployed a Drupal site on a k3d Kubernetes cluster on Linux!

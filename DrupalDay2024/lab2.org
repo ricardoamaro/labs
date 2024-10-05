@@ -1,0 +1,168 @@
+#+title: Lab2
+#+PROPERTY: header-args :results pp
+
+Welcome to Lab2 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
+
+[[org:../repos/labs/DrupalDay2024/lab1.org][Lab1 is a pre-requirement before starting Lab2]]
+
+
+* Understanding the Kubernetes Cluster Setup in Lab1
+
+The use of =--servers 1= and =--agents 2= flags in the =k3d cluster create= command specifies the architecture of the Kubernetes cluster being created with k3d. Below is a detailed explanation of what each flag signifies and why such a configuration might be chosen.
+
+** --servers 1
+   This flag instructs k3d to create the cluster with 1 server node. In the context of Kubernetes:
+   - A server node acts as a master node.
+   - It is responsible for managing the cluster and scheduling applications to run on agent nodes.
+   - A cluster requires at least one server node to function, but more can be added for high availability.
+
+** --agents 2
+   By setting this flag, the cluster will include 2 agent nodes. In Kubernetes terms:
+   - Agent nodes, or worker nodes, are where applications (containers/pods) are actually executed.
+   - Having multiple agent nodes allows for the distribution of applications across more than one node, improving performance and reliability.
+
+** Accessing nodes
+   A particular node can be accessed by attaching another pod running an image:
+
+   #+begin_src bash
+   kubectl debug node/k3d-drupal-cluster-agent-0 -it --image=ubuntu
+   #+end_src
+
+** Why Use This Configuration?
+
+*** Load Distribution
+    - Having multiple agent nodes allows applications to be spread out across nodes, enhancing performance and fault tolerance.
+
+*** Resource Allocation
+    - More nodes mean more compute resources (CPU, memory) are available for applications, accommodating more demanding workloads or multiple applications.
+
+*** Learning and Experimentation
+    - A multi-node setup is beneficial for understanding how Kubernetes manages resources and schedules workloads, offering a closer representation of a production environment compared to a single-node setup.
+
+*** Availability
+    - While this minimal setup doesn’t achieve full high availability (since there's only one server node), it introduces the concept. In production, multiple server nodes are recommended to ensure operational continuity in case of a node failure.
+
+Therefore, the =--servers 1 --agents 2= configuration creates a small, but more realistic, multi-node Kubernetes cluster.
+
+* Increase the number of replicas of the drupal deployment to 2
+
+** Method 1: Using kubectl scale
+
+This command tells Kubernetes to adjust the my-drupal deployment to have 2 replicas:
+
+#+begin_src bash
+kubectl scale deployment my-drupal --replicas=2 -n default
+#+end_src
+
+
+** Method 2: Editing the Deployment
+
+Alternatively, you can manually edit the deployment to change the number of replicas.
+
+#+begin_src bash
+kubectl edit deployment my-drupal -n default
+#+end_src
+
+This command opens the deployment's YAML in your default text editor. Find the replicas field under spec and change its value from 1 to 2. If the replicas field is not present, you can add it under spec:
+
+#+begin_src yaml
+spec:
+  replicas: 2
+#+end_src
+
+After saving your changes and exiting the editor, Kubernetes applies the update the deployment, scaling it to 2 replicas.
+
+
+** Method 3: Installing with a values.yaml file
+
+
+   1. Download and modify the default values file:
+      #+BEGIN_SRC bash
+      curl -s https://raw.githubusercontent.com/bitnami/charts/refs/heads/main/bitnami/drupal/values.yaml
+      #+END_SRC
+
+   2. Start the my-drupal deployment with the replicas changes in the values file
+      #+BEGIN_SRC bash
+      helm install my-drupal bitnami/drupal -f values.yaml
+      #+END_SRC
+
+
+** Verifying the Change
+
+After scaling the deployment, you can verify that the number of replicas has been updated by listing the pods:
+
+#+begin_src sh
+kubectl get pods -n default -l app.kubernetes.io/name=drupal
+#+end_src
+
+This command lists all pods with the label app.kubernetes.io/name=drupal, which should include your my-drupal pods. You should see 2 pods running if the scaling operation was successful.
+
+
+* Persistent Storage for Files and Database
+
+
+In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
+
+      #+begin_src bash
+      kubectl debug node/k3d-drupal-cluster-agent-0 -it --image=ubuntu
+      #+end_src
+
+      k3d cluster create drupal-cluster --servers 1 --agents 2 --volume /home/ricardo/tmp/lab1/:/tmp/lab1/
+
+      helm install my-drupal2 --set persistence.hostPath=$HOME/tmp/lab1 bitnami/drupal
+
+
+* Adding Persistent Storage for Drupal Using Helm and hostPath
+
+#+PROPERTY: header-args :results pp :var MYHOSTPATH='/home/ricardo/tmp/lab1'
+
+** Step 1: Prepare HostPath Directory
+
+
+   Create a directory on your host system to store Drupal files and database persistently.
+   #+BEGIN_SRC bash
+   mkdir -p $MYHOSTPATH
+   cd $MYHOSTPATH
+   ls -larth
+   pwd
+   #+END_SRC
+
+   #+RESULTS:
+   : total 76K
+   : drwxrwxr-x 24 ricardo ricardo  68K out  5 17:35 ..
+   : drwxrwxr-x  2 ricardo ricardo 4,0K out  5 17:35 .
+   : /home/ricardo/tmp/lab1
+
+
+   Replace $MYHOSTPATH with the actual path where you want to store your data.
+
+** Step 2: Install Drupal with Helm using HostPath
+
+   Install the Drupal chart with the =hostPath= persistence setting. Replace =REGISTRY_NAME= and =REPOSITORY_NAME= with actual values. For Bitnami's Drupal chart, use =registry-1.docker.io= for =REGISTRY_NAME= and =bitnami= for =REPOSITORY_NAME=.
+   #+BEGIN_SRC sh
+   helm install my-drupal --set persistence.hostPath=$MYHOSTPATH oci://registry-1.docker.io/bitnami/drupal
+   #+END_SRC
+   Make sure to replace =$MYHOSTPATH= with the path you prepared in Step 1.
+
+** Step 3: Adjust Permissions and Manage Drupal Cache
+   After installation, ensure directory permissions on your host are correctly set for Drupal.
+   - Consult Drupal Core's =INSTALL.txt= for guidance on setting file permissions.
+   - Disable or clear Drupal's cache if necessary. This can be done via Drupal's administrative interface, the Drupal handbook page for cache disabling instructions, or the Drush command-line tool.
+
+*** To clear cache using Drush:
+    #+BEGIN_SRC sh
+    drush cache:rebuild
+    #+END_SRC
+    This assumes Drush is installed and accessible within your Drupal environment.
+
+** Notes on Using =hostPath=
+  - =hostPath= is primarily suited for single-node testing and development.
+  - Be aware of security implications, as =hostPath= can access almost any files on the host.
+  - Data stored in =hostPath= persists across Pod restarts but is tied to the specific node. If the node is lost, so is the data, unless backups are made.
+  - =hostPath= has not been thoroughly tested on Windows with supported VM drivers. For development on Windows, consider alternatives like syncing files with =docker-sync= or using Minikube's mounting features.
+
+
+* Attributing ingress with DNS
+
+
+* Using an image from DDEV
