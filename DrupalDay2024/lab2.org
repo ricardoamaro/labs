@@ -44,6 +44,7 @@ The use of =--servers 1= and =--agents 2= flags in the =k3d cluster create= comm
 
 Therefore, the =--servers 1 --agents 2= configuration creates a small, but more realistic, multi-node Kubernetes cluster.
 
+
 * Increase the number of replicas of the drupal deployment to 2
 
 ** Method 1: Using kubectl scale
@@ -112,54 +113,248 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
       helm install my-drupal2 --set persistence.hostPath=$HOME/tmp/lab1 bitnami/drupal
 
 
-* Adding Persistent Storage for Drupal Using Helm and hostPath
+
+
+
+
+
+* Adding Persistent Storage for Drupal Using Helm and a manual PVC
 
 #+PROPERTY: header-args :results pp :var MYHOSTPATH='/home/ricardo/tmp/lab1'
 
-** Step 1: Prepare HostPath Directory
+** Step 1: Prepare Shared Directory and
 
+ - Create a directory on your host system to store Drupal files and database persistently.
 
-   Create a directory on your host system to store Drupal files and database persistently.
    #+BEGIN_SRC bash
-   mkdir -p $MYHOSTPATH
-   cd $MYHOSTPATH
+   mkdir -p ${MYHOSTPATH}/drupal -p ${MYHOSTPATH}/database
+   cd ${MYHOSTPATH}
+   chmod o+wx ${MYHOSTPATH}/*
    ls -larth
    pwd
    #+END_SRC
 
    #+RESULTS:
    : total 76K
-   : drwxrwxr-x 24 ricardo ricardo  68K out  5 17:35 ..
-   : drwxrwxr-x  2 ricardo ricardo 4,0K out  5 17:35 .
+   : drwxrwxr-x 24 ricardo ricardo  68K out  5 22:46 ..
+   : drwxrwxrwx  2 ricardo ricardo 4,0K out  5 22:46 .
    : /home/ricardo/tmp/lab1
 
-
    Replace $MYHOSTPATH with the actual path where you want to store your data.
+
+ - Start the cluster and add the local-pvc
+
+   #+BEGIN_SRC bash
+   k3d cluster create drupal-cluster --servers 1 --agents 2 --volume $MYHOSTPATH:/lab1
+   kubectl apply -f local-pvc-db-drupal.yaml
+   #+END_SRC
 
 ** Step 2: Install Drupal with Helm using HostPath
 
    Install the Drupal chart with the =hostPath= persistence setting. Replace =REGISTRY_NAME= and =REPOSITORY_NAME= with actual values. For Bitnami's Drupal chart, use =registry-1.docker.io= for =REGISTRY_NAME= and =bitnami= for =REPOSITORY_NAME=.
    #+BEGIN_SRC sh
-   helm install my-drupal --set persistence.hostPath=$MYHOSTPATH oci://registry-1.docker.io/bitnami/drupal
+   helm install my-drupal bitnami/drupal \
+     --set persistence.existingClaim=task-pv-claim-drupal \
+     --set mariadb.primary.persistence.existingClaim=task-pv-claim-database \
+     --set image.debug=true
    #+END_SRC
-   Make sure to replace =$MYHOSTPATH= with the path you prepared in Step 1.
 
-** Step 3: Adjust Permissions and Manage Drupal Cache
-   After installation, ensure directory permissions on your host are correctly set for Drupal.
-   - Consult Drupal Core's =INSTALL.txt= for guidance on setting file permissions.
-   - Disable or clear Drupal's cache if necessary. This can be done via Drupal's administrative interface, the Drupal handbook page for cache disabling instructions, or the Drush command-line tool.
-
-*** To clear cache using Drush:
-    #+BEGIN_SRC sh
-    drush cache:rebuild
-    #+END_SRC
-    This assumes Drush is installed and accessible within your Drupal environment.
 
 ** Notes on Using =hostPath=
   - =hostPath= is primarily suited for single-node testing and development.
   - Be aware of security implications, as =hostPath= can access almost any files on the host.
   - Data stored in =hostPath= persists across Pod restarts but is tied to the specific node. If the node is lost, so is the data, unless backups are made.
   - =hostPath= has not been thoroughly tested on Windows with supported VM drivers. For development on Windows, consider alternatives like syncing files with =docker-sync= or using Minikube's mounting features.
+
+
+* Persistent NFS dynamic path creation directly within PersistentVolume (PV) or PVC specifications based on deployment names
+
+** Introduction
+   This guide outlines how to achieve dynamic directory creation for each deployment in Kubernetes using an NFS server and dynamic provisioning.
+
+** Step 1: Set Up an NFS Server
+   - Install NFS on your server, which can be a Kubernetes node or any other server.
+   - Configure =/etc/exports= to export your desired directory, such as =/lab1=.
+
+     #+BEGIN_SRC sh
+     sudo apt install nfs-kernel-server
+     sudo mkdir -p /opt/lab1
+     sudo chown nobody:nogroup /opt/lab1
+
+     sudo nano /etc/exports
+     #+END_SRC
+
+     add line:
+
+     /opt/lab1 172.18.0.1/16(rw,sync,no_subtree_check)
+
+     #+BEGIN_SRC sh
+     sudo exportfs -a
+     sudo systemctl restart nfs-kernel-server
+     showmount -e localhost
+     #+END_SRC
+
+
+** Step 2: Install an NFS Dynamic Provisioner
+   - The NFS Subdir External Provisioner automatically creates directories within your NFS share for each PVC.
+   - Install the provisioner using Helm:
+
+     #+BEGIN_SRC sh
+     helm repo add nfs-subdir-external-provisioner https://kubernetes-sigs.github.io/nfs-subdir-external-provisioner/
+     helm install nfs-subdir-external-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+         --set nfs.server=<your-nfs-server-ip> \
+         --set nfs.path=/opt/lab1
+
+     #+END_SRC
+
+   - Replace <your-nfs-server-ip> with the IP address or hostname of your NFS server.
+
+** Step 3: Use the StorageClass for Dynamic PVCs
+   - The NFS Subdir External Provisioner creates a StorageClass. PVCs using this StorageClass will have a unique directory within the NFS share.
+   - Example PVC definition:
+
+     #+BEGIN_SRC yaml
+     apiVersion: v1
+     kind: PersistentVolumeClaim
+     metadata:
+       name: dynamic-pv-claim-drupal
+     spec:
+       accessModes:
+         - ReadWriteOnce
+       storageClassName: "nfs-client" # Match the StorageClass name
+       resources:
+         requests:
+           storage: 1Gi
+     ---
+     apiVersion: v1
+     kind: PersistentVolumeClaim
+     metadata:
+       name: dynamic-pv-claim-database
+     spec:
+       accessModes:
+         - ReadWriteOnce
+       storageClassName: "nfs-client" # Adjust to your NFS StorageClass
+       resources:
+         requests:
+           storage: 1Gi
+     #+END_SRC
+
+** Full working commands
+   
+   k3d does no support nfs mounts, therefore use =minikube=
+
+   #+BEGIN_SRC bash :results pp
+   minikube start
+
+   helm install nfs-subdir-external-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
+         --set nfs.server=10.10.10.108 \
+         --set nfs.path=/opt/lab1
+
+
+   echo '
+   apiVersion: v1
+   kind: PersistentVolumeClaim
+   metadata:
+     name: my-drupal-pv-claim
+   spec:
+     accessModes:
+       - ReadWriteOnce
+     storageClassName: "nfs-client"
+     resources:
+       requests:
+         storage: 1Gi
+   ' | kubectl apply -f -
+
+
+   helm install my-drupal bitnami/drupal \
+     --set persistence.existingClaim=my-drupal-pv-claim \
+     --set mariadb.primary.persistence.existingClaim=my-drupal-pv-claim \
+     --set image.debug=true
+   #+END_SRC
+
+   #+RESULTS:
+   #+begin_example
+   ,* minikube v1.34.0 on Debian bookworm/sid
+   ,* Automatically selected the docker driver. Other choices: qemu2, ssh
+   ,* Using Docker driver with root privileges
+   ,* Starting "minikube" primary control-plane node in "minikube" cluster
+   ,* Pulling base image v0.0.45 ...
+   ,* Creating docker container (CPUs=2, Memory=5900MB) ...
+   ,* Preparing Kubernetes v1.31.0 on Docker 27.2.0 ...
+     - Generating certificates and keys ...
+     - Booting up control plane ...
+     - Configuring RBAC rules ...
+   ,* Configuring bridge CNI (Container Networking Interface) ...
+   ,* Verifying Kubernetes components...
+     - Using image gcr.io/k8s-minikube/storage-provisioner:v5
+   ,* Enabled addons: storage-provisioner, default-storageclass
+   ,* Done! kubectl is now configured to use "minikube" cluster and "default" namespace by default
+   NAME: nfs-subdir-external-provisioner
+   LAST DEPLOYED: Sun Oct  6 22:31:57 2024
+   NAMESPACE: default
+   STATUS: deployed
+   REVISION: 1
+   TEST SUITE: None
+   persistentvolumeclaim/my-drupal-pv-claim created
+   NAME: my-drupal
+   LAST DEPLOYED: Sun Oct  6 22:31:59 2024
+   NAMESPACE: default
+   STATUS: deployed
+   REVISION: 1
+   TEST SUITE: None
+   NOTES:
+   CHART NAME: drupal
+   CHART VERSION: 20.0.9
+   APP VERSION: 11.0.5** Please be patient while the chart is being deployed **
+
+   1. Get the Drupal URL:
+
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           Watch the status with: 'kubectl get svc --namespace default -w my-drupal'
+
+     export SERVICE_IP=$(kubectl get svc --namespace default my-drupal --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
+     echo "Drupal URL: http://$SERVICE_IP/"
+
+   2. Get your Drupal login credentials by running:
+
+     echo Username: user
+     echo Password: $(kubectl get secret --namespace default my-drupal -o jsonpath="{.data.drupal-password}" | base64 -d)
+
+   WARNING: There are "resources" sections in the chart not set. Using "resourcesPreset" is not recommended for production. For production installations, please set the following values according to your workload needs:
+     - resources
+   +info https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+   #+end_example
+
+   #+begin_src bash :results pp
+   tree -ush -L 2 /opt/lab1/
+   #+end_src
+
+   #+RESULTS:
+   #+begin_example
+   [ricardo  4.0K]  /opt/lab1/
+   ├── [root     4.0K]  default-dynamic-pv-claim-pvc-7e8c6909-060a-46f2-822b-d9ff35ce70b6
+   │   ├── [1001     4.0K]  data
+   │   ├── [1001     4.0K]  modules
+   │   ├── [1001     4.0K]  profiles
+   │   ├── [1001     4.0K]  sites
+   │   └── [1001     4.0K]  themes
+   └── [root     4.0K]  default-my-drupal-pv-claim-pvc-0524da5e-6fcf-454c-8c72-866a240a9a95
+       ├── [1001     4.0K]  data
+       ├── [1001     4.0K]  modules
+       ├── [1001     4.0K]  profiles
+       ├── [1001     4.0K]  sites
+       └── [1001     4.0K]  themes
+
+   12 directories, 0 files
+   #+end_example
+
+
+
+
+** Notes:
+   - This setup does not directly use the deployment name for directory paths but achieves dynamic storage creation without manual PV or directory creation.
+   - Ensure the NFS provisioner is correctly set up, and the NFS server allows the Kubernetes nodes to access the exported directories.
+   - Adjust the PVC storageClassName to match the actual StorageClass name provided by your dynamic provisioner.
 
 
 * Attributing ingress with DNS

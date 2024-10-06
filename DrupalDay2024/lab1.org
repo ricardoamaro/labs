@@ -141,7 +141,7 @@ Each major action is broken down into steps, with each step containing the neces
       #+RESULTS:
       :results:
       Username: user
-      Password: TnLbbXCEoN
+      Password: TgvYoqZZWc
       :end:
 
    2. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
