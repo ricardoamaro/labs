@@ -65,6 +65,7 @@ Each major action is broken down into steps, with each step containing the neces
    :PROPERTIES:
    :CUSTOM_ID: create-cluster
    :END:
+
       KIND:
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
@@ -272,11 +273,13 @@ Each major action is broken down into steps, with each step containing the neces
    :END:
    1. Delete the Kubernetes cluster.
       #+BEGIN_SRC bash
+      kind delete cluster
+
       k3d cluster delete drupal-cluster
       #+END_SRC
    2. Delete unused docker leftovers
       #+BEGIN_SRC bash
-      echo y |docker system prune
+      docker system prune -f
       #+END_SRC
 
 

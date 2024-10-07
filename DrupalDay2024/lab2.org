@@ -312,7 +312,7 @@ spec:
 
 ** Full working commands
    
-   k3d does no support nfs mounts, therefore use =minikube=
+   k3d does no support nfs mounts and kind has problems, therefore we use =minikube=
 
    #+BEGIN_SRC bash :results pp
    minikube start
