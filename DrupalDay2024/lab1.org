@@ -22,11 +22,29 @@ Each major action is broken down into steps, with each step containing the neces
       kubectl version --client
       #+END_SRC
 
-** Step 1: Install k3d
+** Step 1: Install kind or k3d
    :PROPERTIES:
    :CUSTOM_ID: install-k3d
    :END:
 
+      KIND:
+   1. Download and install the latest version of kind.
+      #+BEGIN_SRC bash
+      [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+      chmod +x ./kind
+      sudo mv ./kind /usr/local/bin/kind
+      #+END_SRC
+   2. Verify the installation.
+      #+BEGIN_SRC shell
+      kind version
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      kind v0.24.0 go1.22.6 linux/amd64
+      :end:
+
+      K3D:
    1. Download and install the latest version of k3d.
       #+BEGIN_SRC bash
       wget -q -O - https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
@@ -43,10 +61,21 @@ Each major action is broken down into steps, with each step containing the neces
       :end:
 
 
-** Step 2: Create a k3d Cluster
+** Step 2: Create a kind or k3d Cluster
    :PROPERTIES:
    :CUSTOM_ID: create-cluster
    :END:
+      KIND:
+   1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
+      #+BEGIN_SRC bash
+      kind create cluster --config kind-lab1.yaml
+      #+END_SRC
+   2. Configure kubectl to use the new cluster.
+      #+BEGIN_SRC bash
+      kubectl config use-context kind-kind
+      #+END_SRC
+
+      K3D:
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
       k3d cluster create drupal-cluster --servers 1 --agents 2
@@ -55,6 +84,9 @@ Each major action is broken down into steps, with each step containing the neces
       #+BEGIN_SRC bash
       kubectl config use-context k3d-drupal-cluster
       #+END_SRC
+
+      ----
+
    3. Verify the cluster status.
       #+BEGIN_SRC bash
       kubectl cluster-info
@@ -174,6 +206,27 @@ Each major action is broken down into steps, with each step containing the neces
    #+BEGIN_SRC bash
    kubectl logs <pod-name>
    #+END_SRC
+
+** Describe the pod or the deployment to get status and events
+   - For pod by name:
+     #+BEGIN_SRC bash
+     kubectl describe pod <pod-name> -n <namespace>
+     #+END_SRC
+   - For pod by labels:
+     #+BEGIN_SRC bash
+     kubectl describe pods -l app.kubernetes.io/name=drupal
+     #+END_SRC
+   - For deployment:
+     #+BEGIN_SRC bash
+     kubectl describe deployment <deployment-name> -n <namespace>
+     #+END_SRC
+
+** Get events for the all namespace
+
+     #+BEGIN_SRC bash
+     kubectl get events -n default
+     #+END_SRC
+
 
 ** Verify if Web Server is Running Inside the Pod
    - For Apache:

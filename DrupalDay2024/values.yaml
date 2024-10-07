@@ -247,7 +247,7 @@ persistence:
   ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
   ##   GKE, AWS & OpenStack)
   ##
-  storageClass: "manual"
+  storageClass: ""
   ## @param persistence.accessModes PVC Access Mode for Drupal volume
   ## Requires persistence.enabled: true
   ## If defined, PVC must be created manually before volume will be bound
@@ -261,7 +261,7 @@ persistence:
   ## Requires persistence.enabled: true
   ## If defined, PVC must be created manually before volume will be bound
   ##
-  existingClaim: "task-pv-claim-drupal"
+  existingClaim: ""
   ## @param persistence.hostPath If defined, the drupal-data volume will mount to the specified hostPath.
   ## Requires persistence.enabled: true
   ## Requires persistence.existingClaim: nil|false
@@ -654,12 +654,12 @@ mariadb:
       ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
       ##   GKE, AWS & OpenStack)
       ##
-      storageClass: "manual"
+      storageClass: ""
       accessModes:
         - ReadWriteOnce
       size: 8Gi
       hostPath: ""
-      existingClaim: "task-pv-claim-database"
+      existingClaim: ""
 ## External database configuration
 ## @param externalDatabase.host Host of the existing database
 ## @param externalDatabase.port Port of the existing database

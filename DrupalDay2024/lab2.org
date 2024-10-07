@@ -6,6 +6,14 @@ Welcome to Lab2 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 [[org:../repos/labs/DrupalDay2024/lab1.org][Lab1 is a pre-requirement before starting Lab2]]
 
 
+* Software
+
+https://kind.sigs.k8s.io/docs/user/quick-start/#installing-from-release-binaries
+
+https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download
+
+
+
 * Understanding the Kubernetes Cluster Setup in Lab1
 
 The use of =--servers 1= and =--agents 2= flags in the =k3d cluster create= command specifies the architecture of the Kubernetes cluster being created with k3d. Below is a detailed explanation of what each flag signifies and why such a configuration might be chosen.
@@ -96,25 +104,15 @@ After scaling the deployment, you can verify that the number of replicas has bee
 kubectl get pods -n default -l app.kubernetes.io/name=drupal
 #+end_src
 
-This command lists all pods with the label app.kubernetes.io/name=drupal, which should include your my-drupal pods. You should see 2 pods running if the scaling operation was successful.
+#+RESULTS:
+: NAME                          READY   STATUS             RESTARTS        AGE
+: my-drupal-854b89bf94-874t7    0/1     CrashLoopBackOff   5 (2m29s ago)   5m48s
+: my-drupal-854b89bf94-xqdsq    1/1     Running            0               14m
 
 
-* Persistent Storage for Files and Database
-
-
-In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
-
-      #+begin_src bash
-      kubectl debug node/k3d-drupal-cluster-agent-0 -it --image=ubuntu
-      #+end_src
-
-      k3d cluster create drupal-cluster --servers 1 --agents 2 --volume /home/ricardo/tmp/lab1/:/tmp/lab1/
-
-      helm install my-drupal2 --set persistence.hostPath=$HOME/tmp/lab1 bitnami/drupal
-
-
-
-
+This command lists all pods with the label app.kubernetes.io/name=drupal, which should include your my-drupal pods.
+You should see 2 pods running if the scaling operation was successful.
+Currently there seems to be a bug with the apache container failing with
 
 
 
@@ -124,10 +122,10 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
 
 ** Step 1: Prepare Shared Directory and
 
- - Create a directory on your host system to store Drupal files and database persistently.
+ 1. Create a directory on your host system to store Drupal files and database persistently.
 
    #+BEGIN_SRC bash
-   mkdir -p ${MYHOSTPATH}/drupal -p ${MYHOSTPATH}/database
+   mkdir -p ${MYHOSTPATH}/drupal1
    cd ${MYHOSTPATH}
    chmod o+wx ${MYHOSTPATH}/*
    ls -larth
@@ -135,29 +133,103 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
    #+END_SRC
 
    #+RESULTS:
-   : total 76K
+   : total 88K
    : drwxrwxr-x 24 ricardo ricardo  68K out  5 22:46 ..
-   : drwxrwxrwx  2 ricardo ricardo 4,0K out  5 22:46 .
-   : /home/ricardo/tmp/lab1
+   : drwxrwxrwx  5 ricardo ricardo 4,0K out  7 00:06 .
+   : drwxrwxrwx  2 ricardo root    4,0K out  7 00:18 drupal1
+
 
    Replace $MYHOSTPATH with the actual path where you want to store your data.
 
- - Start the cluster and add the local-pvc
+ 2. Start the cluster and add the local-pvc
 
    #+BEGIN_SRC bash
-   k3d cluster create drupal-cluster --servers 1 --agents 2 --volume $MYHOSTPATH:/lab1
-   kubectl apply -f local-pvc-db-drupal.yaml
+   kind create cluster --config kind-config.yaml
+
+   #minikube start --driver=kvm2 && minikube mount /home/ricardo/tmp/lab1:/lab1
+   #k3d cluster create drupal-cluster --servers 1 --agents 2 --volume $MYHOSTPATH:/lab1
+   #kubectl apply -f local-pvc-db-drupal.yaml
    #+END_SRC
 
-** Step 2: Install Drupal with Helm using HostPath
+   WARNING: Both applications have some issues mounting external volumes
 
-   Install the Drupal chart with the =hostPath= persistence setting. Replace =REGISTRY_NAME= and =REPOSITORY_NAME= with actual values. For Bitnami's Drupal chart, use =registry-1.docker.io= for =REGISTRY_NAME= and =bitnami= for =REPOSITORY_NAME=.
+** Step 2: Install Drupal with Helm using a PVC
+
+ 1. Create a PersistentVolumeClaim (PVC)
+
+   #+BEGIN_SRC bash
+
+   echo '
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: drupal1-pv-volume
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/lab1/drupal1"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: drupal1-pv-claim
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+   ' | kubectl apply -f -
+   #+END_SRC
+
+   #+RESULTS:
+   : persistentvolume/drupal1-pv-volume created
+   : persistentvolumeclaim/drupal1-pv-claim created
+
+ 2. Install the Drupal chart with the =PVC= persistence setting.
+
    #+BEGIN_SRC sh
    helm install my-drupal bitnami/drupal \
-     --set persistence.existingClaim=task-pv-claim-drupal \
-     --set mariadb.primary.persistence.existingClaim=task-pv-claim-database \
-     --set image.debug=true
+     --set persistence.enabled=true,persistence.existingClaim=drupal1-pv-claim,mariadb.primary.persistence.existingClaim=drupal1-pv-claim
    #+END_SRC
+
+   #+RESULTS:
+   #+begin_example
+   NAME: my-drupal2
+   LAST DEPLOYED: Sun Oct  6 23:38:09 2024
+   NAMESPACE: default
+   STATUS: deployed
+   REVISION: 1
+   TEST SUITE: None
+   NOTES:
+   CHART NAME: drupal
+   CHART VERSION: 20.0.9
+   APP VERSION: 11.0.5** Please be patient while the chart is being deployed **
+
+   1. Get the Drupal URL:
+
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+           Watch the status with: 'kubectl get svc --namespace default -w my-drupal2'
+
+     export SERVICE_IP=$(kubectl get svc --namespace default my-drupal2 --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
+     echo "Drupal URL: http://$SERVICE_IP/"
+
+   2. Get your Drupal login credentials by running:
+
+     echo Username: user
+     echo Password: $(kubectl get secret --namespace default my-drupal2 -o jsonpath="{.data.drupal-password}" | base64 -d)
+
+   WARNING: There are "resources" sections in the chart not set. Using "resourcesPreset" is not recommended for production. For production installations, please set the following values according to your workload needs:
+     - resources
+   +info https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+   #+end_example
 
 
 ** Notes on Using =hostPath=
@@ -167,7 +239,7 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
   - =hostPath= has not been thoroughly tested on Windows with supported VM drivers. For development on Windows, consider alternatives like syncing files with =docker-sync= or using Minikube's mounting features.
 
 
-* Persistent NFS dynamic path creation directly within PersistentVolume (PV) or PVC specifications based on deployment names
+* Adding Persistent Storage using NFS dynamic path creation directly within PersistentVolume (PV) or PVC specifications based on deployment names
 
 ** Introduction
    This guide outlines how to achieve dynamic directory creation for each deployment in Kubernetes using an NFS server and dynamic provisioning.
@@ -204,7 +276,6 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
      helm install nfs-subdir-external-provisioner nfs-subdir-external-provisioner/nfs-subdir-external-provisioner \
          --set nfs.server=<your-nfs-server-ip> \
          --set nfs.path=/opt/lab1
-
      #+END_SRC
 
    - Replace <your-nfs-server-ip> with the IP address or hostname of your NFS server.
@@ -255,7 +326,7 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
    apiVersion: v1
    kind: PersistentVolumeClaim
    metadata:
-     name: my-drupal-pv-claim
+     name: nfs-drupal-pv-claim
    spec:
      accessModes:
        - ReadWriteOnce
@@ -266,10 +337,8 @@ In k3d data in PVC is stored inside =/host/var/lib/rancher/k3s/storage=
    ' | kubectl apply -f -
 
 
-   helm install my-drupal bitnami/drupal \
-     --set persistence.existingClaim=my-drupal-pv-claim \
-     --set mariadb.primary.persistence.existingClaim=my-drupal-pv-claim \
-     --set image.debug=true
+   helm install nfs-drupal bitnami/drupal \
+     --set image.debug=true,persistence.enabled=true,persistence.existingClaim=nfs-drupal-pv-claim,mariadb.primary.persistence.existingClaim=nfs-drupal-pv-claim
    #+END_SRC
 
    #+RESULTS:
