@@ -1,15 +1,23 @@
-#+title: Readme
+#+title: Como fazer um videojogo (simples) em Godot
+#+PROPERTY: header-args :results drawer
 
 * Sessão: Como fazer um videojogo (simples) em Godot
 
 Orador: Rafael Gonçalves
 
 - Assets
-  https://gthub.com/gonzelvis/sapador
+  #+begin_src bash
+  cd ~/repos && git clone https://github.com/gonzelvis/sapador
+  #+end_src
+
+  #+RESULTS:
+  :results:
+  Cloning into 'sapador'...
+  [ Babel evaluation exited with code 0 ]
+  :end:
+
 
 ** Prototipagem
 
 - Site de exemplos de jogos
   https://www.kenney.nl
-
-

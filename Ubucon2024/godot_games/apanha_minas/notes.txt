@@ -1,0 +1,39 @@
+Criar projeto, dar nome,
+
+Apresentar o interface, criar node Control,
+
+Criar Label Hello World, salvar e correr,
+
+Mostrar diagrama do jogo,
+
+Mudar label para titulo e criar dois butoes novo jogo e sair,
+
+Mostrar o que um signal e como ligar
+
+Download board game sprites from Kenney and import
+
+Declara cellsize e fazer scene sprite
+
+Fazer func new game e dentro fazer grid
+
+Adicionar script à celula
+
+ligar sinal button up
+
+make reveal cell
+
+make game over in game script
+
+1h30
+
+(21:30)
+
+add mines vars
+
+make game over state
+
+add colors
+
+(22:19)
+
+check neighbors

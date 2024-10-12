@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3 uid="uid://u6v80xnc280k"]
+
+[ext_resource type="Texture2D" uid="uid://bs4r0p8v1y6n5" path="res://assets/d6_outline.png" id="1_8vbvu"]
+[ext_resource type="Texture2D" uid="uid://4ey1c4lhubd3" path="res://assets/dice_question.png" id="2_ftdhk"]
+[ext_resource type="Script" path="res://cell.gd" id="3_l6ybq"]
+
+[node name="Cell" type="TextureButton"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_default_cursor_shape = 2
+button_mask = 3
+texture_normal = ExtResource("1_8vbvu")
+texture_hover = ExtResource("2_ftdhk")
+script = ExtResource("3_l6ybq")
