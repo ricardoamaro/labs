@@ -120,10 +120,25 @@ Each major action is broken down into steps, with each step containing the neces
       #+BEGIN_SRC bash
       helm repo add bitnami https://charts.bitnami.com/bitnami
       #+END_SRC
+
+      #+RESULTS:
+      :results:
+      "bitnami" already exists with the same configuration, skipping
+      :end:
+
    2. Update Helm repository.
       #+BEGIN_SRC bash
       helm repo update
       #+END_SRC
+
+      #+RESULTS:
+      :results:
+      Hang tight while we grab the latest from your chart repositories...
+      ...Successfully got an update from the "nfs-subdir-external-provisioner" chart repository
+      ...Successfully got an update from the "longhorn" chart repository
+      ...Successfully got an update from the "bitnami" chart repository
+      Update Complete. ⎈Happy Helming!⎈
+      :end:
 
       NOTE: repositories are cached locally at $HOME/.cache/helm/ and configs in $HOME/.config/helm/. Check 'helm env'
 
@@ -174,7 +189,7 @@ Each major action is broken down into steps, with each step containing the neces
       #+RESULTS:
       :results:
       Username: user
-      Password: TgvYoqZZWc
+      Password: UjyJJILlqd
       :end:
 
    2. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
@@ -207,6 +222,11 @@ Each major action is broken down into steps, with each step containing the neces
    #+BEGIN_SRC bash
    kubectl logs <pod-name>
    #+END_SRC
+
+** Install my-drupal with image.debug=true
+
+
+helm install my-drupal bitnami/drupal --set image.debug=true
 
 ** Describe the pod or the deployment to get status and events
    - For pod by name:
@@ -254,6 +274,13 @@ Each major action is broken down into steps, with each step containing the neces
      #+BEGIN_SRC bash :results pp
      kubectl get deployment my-drupal -o yaml
      #+END_SRC
+
+** Use a debug container
+
+   - Spin up a debug beside the failing pod
+     #+begin_src bash
+     kubectl debug <pod> -it --image=ubuntu
+     #+end_src
 
 ** Bonus 1: Expose Drupal through a NodePort or LoadBalancer Service for Easier Access
    - NodePort Service:

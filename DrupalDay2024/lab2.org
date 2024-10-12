@@ -312,7 +312,7 @@ spec:
 
 ** Full working commands
    
-   k3d does no support nfs mounts and kind has problems, therefore we use =minikube=
+   k3d does no support nfs mounts and kind has some other problems with it, therefore we use =minikube= to demonstrate nfs pvc across nodes
 
    #+BEGIN_SRC bash :results pp
    minikube start

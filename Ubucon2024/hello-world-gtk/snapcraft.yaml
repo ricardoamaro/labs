@@ -1,0 +1,30 @@
+name: hello-world-gtk
+version: '0.1'
+summary: Gtk Hello World example
+description: A simple Gtk example
+base: core22
+confinement: strict
+
+apps:
+  hello-world-gtk:
+    command: src/hello-world-gtk
+    plugs:
+      - x11
+      - wayland
+
+parts:
+  hello-world-gtk:
+    plugin: dump
+    source: .
+    override-build: |
+      set -eux
+      cd src
+      gcc $(pkg-config --cflags gtk4) -o hello-world-gtk \
+        hello-world-gtk.c $(pkg-config --libs gtk4)
+      cd ..
+      craftctl default
+    build-packages:
+      - pkgconf
+      - libgtk-4-dev
+    stage-packages:
+      - libgtk-4-1
