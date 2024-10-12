@@ -1,0 +1,15 @@
+#+title: Readme
+
+* Sessão: Como fazer um videojogo (simples) em Godot
+
+Orador: Rafael Gonçalves
+
+- Assets
+  https://gthub.com/gonzelvis/sapador
+
+** Prototipagem
+
+- Site de exemplos de jogos
+  https://www.kenney.nl
+
+

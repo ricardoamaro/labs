@@ -1,0 +1,45 @@
+#+title: Readme
+
+
+
+* Workshop Slides
+
+https://snapcraft.io/snapcraft
+
+https://events.canonical.com/event/35/contributions/291/attachments/60/101/Workshop%20Your%20app%20everywhere,%20just%20in%20a%20Snap!.pdf
+
+
+* Hello World Snap
+
+** Build hello world snap
+
+https://www.gtk.org/docs/getting-started/hello-world
+
+#+begin_src bash
+cd hello-world-gtk
+pwd
+snapcraft pack -v --debug
+
+#+end_src
+
+#+RESULTS:
+: /home/ricardo/repos/labs/Ubucon2024/hello-world-gtk
+
+
+** Install
+
+#+begin_src bash
+sudo snap install hello-world-gtk_0.1_amd64.snap --dangerous
+#+end_src
+
+** Run
+
+#+begin_src bash
+snap run hello-world-gtk
+#+end_src
+
+* Gnome text editor
+
+** Examples
+
+https://github.com/tillkamppeter/gnome-text-editor-workshop-examples
