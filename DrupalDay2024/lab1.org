@@ -223,8 +223,11 @@ Each major action is broken down into steps, with each step containing the neces
    kubectl logs <pod-name>
    #+END_SRC
 
-** Install my-drupal with image.debug=true
+** Read the image instructions
 
+https://github.com/bitnami/containers/tree/main/bitnami/drupal
+
+** Install my-drupal with image.debug=true
 
 helm install my-drupal bitnami/drupal --set image.debug=true
 
