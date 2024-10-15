@@ -12,8 +12,8 @@ Orador: Rafael Gonçalves
 
   #+RESULTS:
   :results:
-  Cloning into 'sapador'...
-  [ Babel evaluation exited with code 0 ]
+  fatal: destination path 'sapador' already exists and is not an empty directory.
+  [ Babel evaluation exited with code 128 ]
   :end:
 
 
@@ -21,3 +21,15 @@ Orador: Rafael Gonçalves
 
 - Site de exemplos de jogos
   https://www.kenney.nl
+
+
+
+        args:
+        - -xec
+        - |
+        sed -i "s|'port' => 3306,|'port' => '3306',|g" /opt/bitnami/drupal/sites/default/settings.php
+        /opt/bitnami/scripts/drupal/entrypoint.sh /opt/bitnami/scripts/apache/run.sh
+        sleep 9000
+
+        command:
+        - /bin/bash

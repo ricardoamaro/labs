@@ -1,0 +1,320 @@
+#+title: Lab1
+#+PROPERTY: header-args :results drawer
+
+Welcome to Lab1 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
+
+To set up a fully functional Drupal site on a k3d Kubernetes cluster on Linux, follow these steps.
+This guide assumes you have Docker installed on your Linux system. If not, please install it first from https://docs.docker.com/engine/install/.
+
+Each major action is broken down into steps, with each step containing the necessary commands and explanations.
+
+* Install kubectl and setup a Drupal Site on a k3d Kubernetes Cluster
+
+  This guide will walk you through the process of setting up a k3d Kubernetes cluster on Linux and deploying a Drupal site on it.
+
+** Step 0: Installing kubectl
+   :PROPERTIES:
+   :CUSTOM_ID: install-kubectl
+   :END:
+   1. Download and install the latest version of kubectl.
+      #+BEGIN_SRC bash
+      curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && chmod +x ./kubectl && sudo mv ./kubectl /usr/local/bin/kubectl
+      kubectl version --client
+      #+END_SRC
+
+** Step 1: Install kind or k3d
+   :PROPERTIES:
+   :CUSTOM_ID: install-k3d
+   :END:
+
+      KIND:
+   1. Download and install the latest version of kind.
+      #+BEGIN_SRC bash
+      [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+      chmod +x ./kind
+      sudo mv ./kind /usr/local/bin/kind
+      #+END_SRC
+   2. Verify the installation.
+      #+BEGIN_SRC shell
+      kind version
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      kind v0.24.0 go1.22.6 linux/amd64
+      :end:
+
+      K3D:
+   1. Download and install the latest version of k3d.
+      #+BEGIN_SRC bash
+      wget -q -O - https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
+      #+END_SRC
+   2. Verify the installation.
+      #+BEGIN_SRC shell
+      k3d version
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      k3d version v5.7.4
+      k3s version v1.30.4-k3s1 (default)
+      :end:
+
+
+** Step 2: Create a kind or k3d Cluster
+   :PROPERTIES:
+   :CUSTOM_ID: create-cluster
+   :END:
+
+      KIND:
+   1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
+      #+BEGIN_SRC bash
+      kind create cluster --config kind-lab1.yaml
+      #+END_SRC
+   2. Configure kubectl to use the new cluster.
+      #+BEGIN_SRC bash
+      kubectl config use-context kind-kind
+      #+END_SRC
+
+      K3D:
+   1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
+      #+BEGIN_SRC bash
+      k3d cluster create drupal-cluster --servers 1 --agents 2
+      #+END_SRC
+   2. Configure kubectl to use the new cluster.
+      #+BEGIN_SRC bash
+      kubectl config use-context k3d-drupal-cluster
+      #+END_SRC
+
+      ----
+
+   3. Verify the cluster status.
+      #+BEGIN_SRC bash
+      kubectl cluster-info
+      #+END_SRC
+
+
+** Step 3: Install Helm
+   :PROPERTIES:
+   :CUSTOM_ID: install-helm
+   :END:
+   1. Download and install Helm.
+      #+BEGIN_SRC bash
+      curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+      #+END_SRC
+   2. Verify Helm installation.
+      #+BEGIN_SRC bash
+      helm version
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
+      :end:
+
+** Step 4: Add Bitnami Helm Chart Repository
+   :PROPERTIES:
+   :CUSTOM_ID: add-bitnami-repo
+   :END:
+   1. Add the Bitnami repository.
+      #+BEGIN_SRC bash
+      helm repo add bitnami https://charts.bitnami.com/bitnami
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      "bitnami" already exists with the same configuration, skipping
+      :end:
+
+   2. Update Helm repository.
+      #+BEGIN_SRC bash
+      helm repo update
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      Hang tight while we grab the latest from your chart repositories...
+      ...Successfully got an update from the "nfs-subdir-external-provisioner" chart repository
+      ...Successfully got an update from the "longhorn" chart repository
+      ...Successfully got an update from the "bitnami" chart repository
+      Update Complete. ⎈Happy Helming!⎈
+      :end:
+
+      NOTE: repositories are cached locally at $HOME/.cache/helm/ and configs in $HOME/.config/helm/. Check 'helm env'
+
+** Step 5: Install Drupal
+   :PROPERTIES:
+   :CUSTOM_ID: install-drupal
+   :END:
+   1. Deploy Drupal and MariaDB. This will use https://github.com/bitnami/charts/tree/main/bitnami/drupal
+      #+BEGIN_SRC bash
+      helm install my-drupal bitnami/drupal
+      #+END_SRC
+   2. Monitor pod status.
+      #+BEGIN_SRC bash
+      kubectl get pods
+      #+END_SRC
+   4. List pods and deployments
+      #+begin_src bash
+      kubectl top pod --sort-by=cpu -A
+      kubectl get deployments -A
+      #+end_src
+
+** Step 6: Watch Drupal startup and get creds (not used in Lab1)
+   :PROPERTIES:
+   :CUSTOM_ID: install-drupal
+   :END:
+
+   1. If your prod setup has a LoadBalancer IP it may take a few minutes for it to be available.
+      #+BEGIN_SRC bash
+      kubectl get svc --namespace default -w my-drupal
+      #+END_SRC
+
+      #+BEGIN_SRC bash
+      export SERVICE_IP=$(kubectl get svc --namespace default my-drupal --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
+      echo "Drupal URL: http://$SERVICE_IP/"
+      #+END_SRC
+
+** Step 7: Access Your Drupal Site
+   :PROPERTIES:
+   :CUSTOM_ID: access-drupal
+   :END:
+
+   1. Get your Drupal login credentials by running:
+      #+BEGIN_SRC bash
+      echo Username: user
+      echo Password: $(kubectl get secret --namespace default my-drupal -o jsonpath="{.data.drupal-password}" | base64 -d)
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      Username: user
+      Password: UjyJJILlqd
+      :end:
+
+   2. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
+      #+BEGIN_SRC bash
+      DPOD=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=drupal" -o jsonpath="{.items[0].metadata.name}")
+      kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 8080:8080
+      #+END_SRC
+
+   3. Access Drupal site at http://localhost:8080.
+
+** Step 8: Configure Drupal
+
+   Follow the on-screen instructions to complete the Drupal setup through your browser. You will need the database credentials, provided by Helm upon installation.
+
+* Troubleshooting
+
+** Ensure Pods are Running and Ready
+   #+BEGIN_SRC bash
+   kubectl get pods
+   #+END_SRC
+
+   #+RESULTS:
+   :results:
+   NAME                         READY   STATUS    RESTARTS   AGE
+   my-drupal-84766b946f-m4pcd   1/1     Running   0          37m
+   my-drupal-mariadb-0          1/1     Running   0          37m
+   :end:
+
+** Check Pod Logs for Errors
+   #+BEGIN_SRC bash
+   kubectl logs <pod-name>
+   #+END_SRC
+
+** Read the image instructions
+
+https://github.com/bitnami/containers/tree/main/bitnami/drupal
+
+** Install my-drupal with image.debug=true
+
+helm install my-drupal bitnami/drupal --set image.debug=true
+
+** Describe the pod or the deployment to get status and events
+   - For pod by name:
+     #+BEGIN_SRC bash
+     kubectl describe pod <pod-name> -n <namespace>
+     #+END_SRC
+   - For pod by labels:
+     #+BEGIN_SRC bash
+     kubectl describe pods -l app.kubernetes.io/name=drupal
+     #+END_SRC
+   - For deployment:
+     #+BEGIN_SRC bash
+     kubectl describe deployment <deployment-name> -n <namespace>
+     #+END_SRC
+
+** Get events for the all namespace
+
+     #+BEGIN_SRC bash
+     kubectl get events -n default
+     #+END_SRC
+
+
+** Verify if Web Server is Running Inside the Pod
+   - For Apache:
+     #+BEGIN_SRC bash
+     kubectl exec <pod-name> -- pgrep httpd
+     #+END_SRC
+   - For Nginx:
+     #+BEGIN_SRC bash
+     kubectl exec <pod-name> -- pgrep nginx
+     #+END_SRC
+
+** Restart the Pod if Necessary
+   - Deleting the pod will recreate it
+     #+BEGIN_SRC bash
+     kubectl delete pod <pod-name>
+     #+END_SRC
+
+** Check Kubernetes Service and Deployment Configurations
+   - Services:
+     #+BEGIN_SRC bash
+     kubectl get svc
+     #+END_SRC
+   - Deployment Configurations:
+     #+BEGIN_SRC bash :results pp
+     kubectl get deployment my-drupal -o yaml
+     #+END_SRC
+
+** Use a debug container
+
+   - Spin up a debug beside the failing pod
+     #+begin_src bash
+     kubectl debug <pod> -it --image=ubuntu
+     #+end_src
+
+** Bonus 1: Expose Drupal through a NodePort or LoadBalancer Service for Easier Access
+   - NodePort Service:
+     #+BEGIN_SRC bash
+     kubectl expose deployment <deployment-name> --type=NodePort --name=drupal-service --port=80
+     #+END_SRC
+   - LoadBalancer Service:
+     #+BEGIN_SRC bash
+     kubectl expose deployment <deployment-name> --type=LoadBalancer --name=drupal-loadbalancer --port=80
+     #+END_SRC
+
+* Cleanup
+
+** Delete the k3d Cluster and images
+   :PROPERTIES:
+   :CUSTOM_ID: delete-cluster
+   :END:
+   1. Delete the Kubernetes cluster.
+      #+BEGIN_SRC bash
+      kind delete cluster
+
+      k3d cluster delete drupal-cluster
+      #+END_SRC
+   2. Delete all K8s volumes or unused docker leftovers
+      #+BEGIN_SRC bash
+      helm delete my-drupal
+      kubectl delete pvc --all
+      docker system prune -f
+      #+END_SRC
+
+
+
+
+Congratulations, you have now deployed a Drupal site on a k3d Kubernetes cluster on Linux!
