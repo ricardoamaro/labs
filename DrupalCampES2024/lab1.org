@@ -159,11 +159,13 @@ Each major action is broken down into steps, with each step containing the neces
 
 #+CAPTION: Deployment Diagram of Drupal into Kubernetes
 #+NAME:   fig:1
+#+ATTR_HTML: :align center with: 250px
+#+ATTR_ORG:  :align left with: 250px
 [[./diagram.png]]
 
 [[file:diagram.png][Deployment Diagram of Drupal into Kubernetes]]
 
-   #+begin_src mermaid
+   #+begin_src mermaid :file diagram_mermaid.png :exports results
    graph TD
       Ingress -->|exposes| LoadBalancer
       LoadBalancer -->|routes to| DrupalDeployment[Drupal Deployment<br> Pods with Drupal<br>and PHP runtime ]
