@@ -156,6 +156,11 @@ Each major action is broken down into steps, with each step containing the neces
 
 *** Deployment Diagram in mermaid
 
+
+#+CAPTION: Deployment Diagram of Drupal into Kubernetes
+#+NAME:   fig:1
+[[./diagram.png]]
+
 [[file:diagram.png][Deployment Diagram of Drupal into Kubernetes]]
 
    #+begin_src mermaid
