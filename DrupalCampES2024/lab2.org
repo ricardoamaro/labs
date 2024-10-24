@@ -52,8 +52,46 @@ The use of =--servers 1= and =--agents 2= flags in the =k3d cluster create= comm
 
 Therefore, the =--servers 1 --agents 2= configuration creates a small, but more realistic, multi-node Kubernetes cluster.
 
+* Install kind and spin up a different cluster with Drupal
+
+** Intsall kind
+
+   1. Download and install the latest version of kind.
+      #+BEGIN_SRC bash
+      [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
+      chmod +x ./kind
+      sudo mv ./kind /usr/local/bin/kind
+      #+END_SRC
+   2. Verify the installation.
+      #+BEGIN_SRC shell
+      kind version
+      #+END_SRC
+
+      #+RESULTS:
+      :results:
+      kind v0.24.0 go1.22.6 linux/amd64
+      :end:
+
+** Create a new cluster
+
+   1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
+      #+BEGIN_SRC bash
+      kind create cluster --config kind-lab1.yaml
+      #+END_SRC
+   2. Configure kubectl to use the new cluster.
+      #+BEGIN_SRC bash
+      kubectl config use-context kind-kind
+      #+END_SRC
+
+** Install Drupal
+
+   1. Deploy Drupal and MariaDB. This will use the same helm charts from Lab 1.
+      #+BEGIN_SRC bash
+      helm install my-drupal bitnami/drupal -f values.yaml
+      #+END_SRC
 
 * Increase the number of replicas of the drupal deployment to 2
+
 
 ** Method 1: Using kubectl scale
 
@@ -120,7 +158,7 @@ Currently there seems to be a bug with the apache container failing with
 
 #+PROPERTY: header-args :results pp :var MYHOSTPATH='/home/ricardo/tmp/lab1'
 
-** Step 1: Prepare Shared Directory and
+** Step 1: Prepare Shared Directory
 
  1. Create a directory on your host system to store Drupal files and database persistently.
 

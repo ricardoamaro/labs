@@ -3,12 +3,15 @@
 
 Welcome to Lab1 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 
-To set up a fully functional Drupal site on a k3d Kubernetes cluster on Linux, follow these steps.
-This guide assumes you have Docker installed on your Linux system. If not, please install it first from https://docs.docker.com/engine/install/.
+The goal is to set up a fully functional Drupal site using a Kubernetes cluster on your computer. Ideally using Linux.
+With a local Kubernetes cluster you will be able to test and develop, mimicking a production cluster.
+
+This guide assumes you have Docker installed on your Linux system.
+If not, please install it first from https://docs.docker.com/engine/install/ or using your distribution packages.
 
 Each major action is broken down into steps, with each step containing the necessary commands and explanations.
 
-* Install kubectl and setup a Drupal Site on a k3d Kubernetes Cluster
+* Install kubectl and setup a Drupal Site on a Kubernetes Cluster
 
   This guide will walk you through the process of setting up a k3d Kubernetes cluster on Linux and deploying a Drupal site on it.
 
@@ -22,29 +25,14 @@ Each major action is broken down into steps, with each step containing the neces
       kubectl version --client
       #+END_SRC
 
-** Step 1: Install kind or k3d
+** Step 1: Install k3d
    :PROPERTIES:
    :CUSTOM_ID: install-k3d
    :END:
 
-      KIND:
-   1. Download and install the latest version of kind.
-      #+BEGIN_SRC bash
-      [ $(uname -m) = x86_64 ] && curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
-      chmod +x ./kind
-      sudo mv ./kind /usr/local/bin/kind
-      #+END_SRC
-   2. Verify the installation.
-      #+BEGIN_SRC shell
-      kind version
-      #+END_SRC
+   There are several tools that facilitate creating a local Kubernetes cluster, like k3d, kind or minikube.
+   In Lab 1 we use k3d, while in Lab 2, we go over the other two.
 
-      #+RESULTS:
-      :results:
-      kind v0.24.0 go1.22.6 linux/amd64
-      :end:
-
-      K3D:
    1. Download and install the latest version of k3d.
       #+BEGIN_SRC bash
       wget -q -O - https://raw.githubusercontent.com/rancher/k3d/main/install.sh | bash
@@ -61,25 +49,17 @@ Each major action is broken down into steps, with each step containing the neces
       :end:
 
 
-** Step 2: Create a kind or k3d Cluster
+** Step 2: Create a k3d Cluster
    :PROPERTIES:
    :CUSTOM_ID: create-cluster
    :END:
 
-      KIND:
-   1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
-      #+BEGIN_SRC bash
-      kind create cluster --config kind-lab1.yaml
-      #+END_SRC
-   2. Configure kubectl to use the new cluster.
-      #+BEGIN_SRC bash
-      kubectl config use-context kind-kind
-      #+END_SRC
 
-      K3D:
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
       k3d cluster create drupal-cluster --servers 1 --agents 2
+
+      $ k3d cluster create drupal-cluster --servers 1 --agents 2 --api-port 6445 --port '8585:8585@loadbalancer' --port '2376:2376@loadbalancer' --port '80:80@loadbalancer' --port '443:443@loadbalancer'
       #+END_SRC
    2. Configure kubectl to use the new cluster.
       #+BEGIN_SRC bash
@@ -116,6 +96,10 @@ Each major action is broken down into steps, with each step containing the neces
    :PROPERTIES:
    :CUSTOM_ID: add-bitnami-repo
    :END:
+
+   For our installation we will use helm charts from an opensource repository.
+   Helm charts are yaml files that declare/define what the application will need to run.
+
    1. Add the Bitnami repository.
       #+BEGIN_SRC bash
       helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -146,9 +130,17 @@ Each major action is broken down into steps, with each step containing the neces
    :PROPERTIES:
    :CUSTOM_ID: install-drupal
    :END:
+
+   A minimal Drupal installation will need two pods and two persisent volumes.
+
+
+
+
+
+
    1. Deploy Drupal and MariaDB. This will use https://github.com/bitnami/charts/tree/main/bitnami/drupal
       #+BEGIN_SRC bash
-      helm install my-drupal bitnami/drupal
+      helm install my-drupal bitnami/drupal -f values.yaml
       #+END_SRC
    2. Monitor pod status.
       #+BEGIN_SRC bash
@@ -203,6 +195,33 @@ Each major action is broken down into steps, with each step containing the neces
 ** Step 8: Configure Drupal
 
    Follow the on-screen instructions to complete the Drupal setup through your browser. You will need the database credentials, provided by Helm upon installation.
+
+** Step 9: Test deleting the existing pods
+
+1. In a new terminal run the command to watch the pod status
+
+#+begin_src bash
+watch "kubectl get pods"
+#+end_src
+
+2. Issue a delete of the drupal pod
+
+#+begin_src bash
+kubectl delete pods my-drupal-....
+#+end_src
+
+3. Observe that the pods gets reconstructed in a few seconds.
+
+
+** Step 10: Scale up the deployment to three from Drupal pods
+
+Issue the scale deployment command
+
+#+begin_src bash
+kubectl scale deployment my-drupal --replicas=3 -n default
+#+end_src
+
+Observe that Drupal is scaled up immediately
 
 * Troubleshooting
 
