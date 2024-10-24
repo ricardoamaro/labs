@@ -167,7 +167,7 @@ Each major action is broken down into steps, with each step containing the neces
    graph TD
       Ingress -->|exposes| LoadBalancer
       LoadBalancer -->|routes to| DrupalDeployment[Drupal Deployment<br> Pods with Drupal<br>and PHP runtime ]
-      DrupalDeployment -->|uses| PVCDrupal[Persistent Volume Claim<br> for Drupal files & data ]
+      DrupalDeployment -->|uses| PVCDrupal[Persistent Volume Claim<br> for Drupal files ]
       PVCDrupal -->|bound to| PV[Persistent Volume - PV ]
       DrupalDeployment -->|reads from| SecretsConfigMaps[Kubernetes Secrets &<br>ConfigMaps]
 
@@ -177,34 +177,6 @@ Each major action is broken down into steps, with each step containing the neces
 
       classDef k8s fill:#f9f,stroke:#333,stroke-width:2px;
       class Ingress,LoadBalancer,DrupalDeployment,MariaDBDeployment,PVCDrupal,PVCMariaDB,PV,SecretsConfigMaps k8s;
-   #+end_src
-
-*** Deployment Diagram in plantuml
-
-   #+begin_src platuml
-   @startuml
-   !define RECTANGLE class
-
-   RECTANGLE Ingress
-   RECTANGLE LoadBalancer
-   RECTANGLE "Drupal Deployment\n(Pods with Drupal\nand PHP runtime)" as DrupalDeployment
-   RECTANGLE "MariaDB Deployment\n(Pods with MariaDB)" as MariaDBDeployment
-   RECTANGLE "Persistent Volume Claim\n(for Drupal files & data)" as PVCDrupal
-   RECTANGLE "Persistent Volume Claim\n(for MariaDB data)" as PVCMariaDB
-   RECTANGLE "Persistent Volume (PV)" as PV
-   RECTANGLE "Kubernetes Secrets &\nConfigMaps" as SecretsConfigMaps
-
-   Ingress -down-> LoadBalancer : exposes
-   LoadBalancer -down-> DrupalDeployment : routes to
-   DrupalDeployment --> PVCDrupal : uses
-   PVCDrupal -down-> PV : bound to
-   DrupalDeployment -right-> SecretsConfigMaps : reads from
-
-   MariaDBDeployment -down-> PVCMariaDB : uses
-   PVCMariaDB -up-> PV : bound to
-   MariaDBDeployment -up-> SecretsConfigMaps : reads from
-
-   @enduml
    #+end_src
 
 ** Step 6: Watch Drupal startup and get creds (not used in Lab1)
