@@ -154,7 +154,9 @@ Each major action is broken down into steps, with each step containing the neces
       #+end_src
 
 
-*** Diaram in mermaid
+*** Deployment Diagram in mermaid
+
+[[file:diagram.png][Deployment Diagram of Drupal into Kubernetes]]
 
    #+begin_src mermaid
    graph TD
@@ -172,7 +174,7 @@ Each major action is broken down into steps, with each step containing the neces
       class Ingress,LoadBalancer,DrupalDeployment,MariaDBDeployment,PVCDrupal,PVCMariaDB,PV,SecretsConfigMaps k8s;
    #+end_src
 
-*** Diagram in plantuml
+*** Deployment Diagram in plantuml
 
    #+begin_src platuml
    @startuml
