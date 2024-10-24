@@ -1,5 +1,5 @@
 #+title: Lab2
-#+PROPERTY: header-args :results pp
+#+PROPERTY: header-args :results drawer
 
 Welcome to Lab2 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 
@@ -11,7 +11,6 @@ Welcome to Lab2 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 https://kind.sigs.k8s.io/docs/user/quick-start/#installing-from-release-binaries
 
 https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download
-
 
 
 * Understanding the Kubernetes Cluster Setup in Lab1
@@ -76,7 +75,7 @@ Therefore, the =--servers 1 --agents 2= configuration creates a small, but more 
 
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
-      kind create cluster --config kind-lab1.yaml
+      kind create cluster --config kind-lab2.yaml
       #+END_SRC
    2. Configure kubectl to use the new cluster.
       #+BEGIN_SRC bash
@@ -95,29 +94,29 @@ Therefore, the =--servers 1 --agents 2= configuration creates a small, but more 
 
 ** Method 1: Using kubectl scale
 
-This command tells Kubernetes to adjust the my-drupal deployment to have 2 replicas:
+   This command tells Kubernetes to adjust the my-drupal deployment to have 2 replicas:
 
-#+begin_src bash
-kubectl scale deployment my-drupal --replicas=2 -n default
-#+end_src
+   #+begin_src bash
+   kubectl scale deployment my-drupal --replicas=2 -n default
+   #+end_src
 
 
 ** Method 2: Editing the Deployment
 
-Alternatively, you can manually edit the deployment to change the number of replicas.
+   Alternatively, you can manually edit the deployment to change the number of replicas.
 
-#+begin_src bash
-kubectl edit deployment my-drupal -n default
-#+end_src
+   #+begin_src bash
+   kubectl edit deployment my-drupal -n default
+   #+end_src
 
-This command opens the deployment's YAML in your default text editor. Find the replicas field under spec and change its value from 1 to 2. If the replicas field is not present, you can add it under spec:
+   This command opens the deployment's YAML in your default text editor. Find the replicas field under spec and change its value from 1 to 2. If the replicas field is not present, you can add it under spec:
 
-#+begin_src yaml
-spec:
-  replicas: 2
-#+end_src
+   #+begin_src yaml
+   spec:
+     replicas: 2
+   #+end_src
 
-After saving your changes and exiting the editor, Kubernetes applies the update the deployment, scaling it to 2 replicas.
+   After saving your changes and exiting the editor, Kubernetes applies the update the deployment, scaling it to 2 replicas.
 
 
 ** Method 3: Installing with a values.yaml file
@@ -136,27 +135,27 @@ After saving your changes and exiting the editor, Kubernetes applies the update 
 
 ** Verifying the Change
 
-After scaling the deployment, you can verify that the number of replicas has been updated by listing the pods:
+   After scaling the deployment, you can verify that the number of replicas has been updated by listing the pods:
 
-#+begin_src sh
-kubectl get pods -n default -l app.kubernetes.io/name=drupal
-#+end_src
+   #+begin_src sh
+   kubectl get pods -n default -l app.kubernetes.io/name=drupal
+   #+end_src
 
-#+RESULTS:
-: NAME                         READY   STATUS    RESTARTS   AGE
-: my-drupal-7df65485cc-9hxpz   1/1     Running   0          45s
-: my-drupal-7df65485cc-ww5p5   1/1     Running   0          14m
+   #+RESULTS:
+   : NAME                         READY   STATUS    RESTARTS   AGE
+   : my-drupal-7df65485cc-9hxpz   1/1     Running   0          45s
+   : my-drupal-7df65485cc-ww5p5   1/1     Running   0          14m
 
 
-This command lists all pods with the label app.kubernetes.io/name=drupal, which should include your my-drupal pods.
-You should see 2 pods running if the scaling operation was successful.
-Currently there seems to be a bug with the apache container failing with
-
+   This command lists all pods with the label app.kubernetes.io/name=drupal, which should include your my-drupal pods.
+   You should see 2 pods running if the scaling operation was successful.
+   Currently there seems to be a bug with the apache container failing with
 
 
 * Adding Persistent Storage for Drupal Using Helm and a manual PVC
 
 #+PROPERTY: header-args :results pp :var MYHOSTPATH='/home/ricardo/tmp/lab1'
+
 
 ** Step 1: Prepare Shared Directory
 
@@ -379,40 +378,6 @@ spec:
      --set image.debug=true,persistence.enabled=true,persistence.existingClaim=nfs-drupal-pv-claim,mariadb.primary.persistence.existingClaim=nfs-drupal-pv-claim
    #+END_SRC
 
-   #+RESULTS:
-   #+begin_example
-   ,* minikube v1.34.0 on Debian bookworm/sid
-   ,* Automatically selected the docker driver. Other choices: qemu2, ssh
-   ,* Using Docker driver with root privileges
-   ,* Starting "minikube" primary control-plane node in "minikube" cluster
-   ,* Pulling base image v0.0.45 ...
-   ,* Creating docker container (CPUs=2, Memory=5900MB) ...
-   ,* Preparing Kubernetes v1.31.0 on Docker 27.2.0 ...
-     - Generating certificates and keys ...
-     - Booting up control plane ...
-     - Configuring RBAC rules ...
-   ,* Configuring bridge CNI (Container Networking Interface) ...
-   ,* Verifying Kubernetes components...
-     - Using image gcr.io/k8s-minikube/storage-provisioner:v5
-   ,* Enabled addons: storage-provisioner, default-storageclass
-   ,* Done! kubectl is now configured to use "minikube" cluster and "default" namespace by default
-   NAME: nfs-subdir-external-provisioner
-   LAST DEPLOYED: Sun Oct  6 22:31:57 2024
-   NAMESPACE: default
-   STATUS: deployed
-   REVISION: 1
-   TEST SUITE: None
-   persistentvolumeclaim/my-drupal-pv-claim created
-   NAME: my-drupal
-   LAST DEPLOYED: Sun Oct  6 22:31:59 2024
-   NAMESPACE: default
-   STATUS: deployed
-   REVISION: 1
-   TEST SUITE: None
-   NOTES:
-   CHART NAME: drupal
-   CHART VERSION: 20.0.9
-   APP VERSION: 11.0.5** Please be patient while the chart is being deployed **
 
    1. Get the Drupal URL:
 
