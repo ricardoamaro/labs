@@ -1,5 +1,6 @@
 #+title: Lab1
-#+PROPERTY: header-args :results drawer
+#+PROPERTY: header-args :results pp
+#+STARTUP: inlineimages
 
 Welcome to Lab1 of *Leveraging Kubernetes for Drupal: A Beginner's Laboratory*
 
@@ -58,16 +59,11 @@ Each major action is broken down into steps, with each step containing the neces
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
       k3d cluster create drupal-cluster --servers 1 --agents 2
-
-      $ k3d cluster create drupal-cluster --servers 1 --agents 2 --api-port 6445 --port '8585:8585@loadbalancer' --port '2376:2376@loadbalancer' --port '80:80@loadbalancer' --port '443:443@loadbalancer'
       #+END_SRC
    2. Configure kubectl to use the new cluster.
       #+BEGIN_SRC bash
       kubectl config use-context k3d-drupal-cluster
       #+END_SRC
-
-      ----
-
    3. Verify the cluster status.
       #+BEGIN_SRC bash
       kubectl cluster-info
@@ -181,7 +177,8 @@ Each major action is broken down into steps, with each step containing the neces
       class Ingress,LoadBalancer,DrupalDeployment,MariaDBDeployment,PVCDrupal,PVCMariaDB,PV,SecretsConfigMaps k8s;
    #+end_src
 
-** Step 6: Watch Drupal startup and get creds (not used in Lab1)
+
+** Step 6: SKIP THIS FOR Lab1 - LoadBalancer IP
    :PROPERTIES:
    :CUSTOM_ID: install-drupal
    :END:
