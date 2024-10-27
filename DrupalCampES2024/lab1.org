@@ -49,7 +49,6 @@ Each major action is broken down into steps, with each step containing the neces
       k3s version v1.30.4-k3s1 (default)
       :end:
 
-
 ** Step 2: Create a k3d Cluster
    :PROPERTIES:
    :CUSTOM_ID: create-cluster
@@ -68,7 +67,6 @@ Each major action is broken down into steps, with each step containing the neces
       #+BEGIN_SRC bash
       kubectl cluster-info
       #+END_SRC
-
 
 ** Step 3: Install Helm
    :PROPERTIES:
@@ -177,23 +175,7 @@ Each major action is broken down into steps, with each step containing the neces
       class Ingress,LoadBalancer,DrupalDeployment,MariaDBDeployment,PVCDrupal,PVCMariaDB,PV,SecretsConfigMaps k8s;
    #+end_src
 
-
-** Step 6: SKIP THIS FOR Lab1 - LoadBalancer IP
-   :PROPERTIES:
-   :CUSTOM_ID: install-drupal
-   :END:
-
-   1. If your prod setup has a LoadBalancer IP it may take a few minutes for it to be available.
-      #+BEGIN_SRC bash
-      kubectl get svc --namespace default -w my-drupal
-      #+END_SRC
-
-      #+BEGIN_SRC bash
-      export SERVICE_IP=$(kubectl get svc --namespace default my-drupal --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
-      echo "Drupal URL: http://$SERVICE_IP/"
-      #+END_SRC
-
-** Step 7: Access Your Drupal Site
+** Step 6: Access Your Drupal Site
    :PROPERTIES:
    :CUSTOM_ID: access-drupal
    :END:
@@ -210,7 +192,23 @@ Each major action is broken down into steps, with each step containing the neces
       Password: UjyJJILlqd
       :end:
 
-   2. Find the Drupal pod name and Forward port 8080 to the Drupal pod.
+   2. Forward port 8080 to the my-drupal service
+
+      Identify the Drupal service name:
+
+      #+begin_src bash
+      kubectl get services
+      #+end_src
+
+      You should see a service named my-drupal.
+      Forward port 8080 on your local machine to the service's port:
+
+      #+begin_src bash
+      kubectl port-forward svc/my-drupal 8080:80
+      #+end_src
+
+   2. If that didn't work, alternately you can forward port 8080 to the Drupal pod.
+
       #+BEGIN_SRC bash
       DPOD=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=drupal" -o jsonpath="{.items[0].metadata.name}")
       kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 8080:8080
@@ -218,11 +216,11 @@ Each major action is broken down into steps, with each step containing the neces
 
    3. Access Drupal site at http://localhost:8080.
 
-** Step 8: Configure Drupal
+** Step 7: Configure Drupal
 
    Follow the on-screen instructions to complete the Drupal setup through your browser. You will need the database credentials, provided by Helm upon installation.
 
-** Step 9: Test deleting the existing pods
+** Step 8: Test deleting the existing pods
 
 1. In a new terminal run the command to watch the pod status
 
@@ -238,8 +236,7 @@ kubectl delete pods my-drupal-....
 
 3. Observe that the pods gets reconstructed in a few seconds.
 
-
-** Step 10: Scale up the deployment to three from Drupal pods
+** Step 9: Scale up the deployment to three from Drupal pods
 
 Issue the scale deployment command
 
@@ -358,8 +355,6 @@ helm install my-drupal bitnami/drupal --set image.debug=true
       kubectl delete pvc --all
       docker system prune -f
       #+END_SRC
-
-
 
 
 Congratulations, you have now deployed a Drupal site on a k3d Kubernetes cluster on Linux!

@@ -429,7 +429,23 @@ spec:
    - Adjust the PVC storageClassName to match the actual StorageClass name provided by your dynamic provisioner.
 
 
+* Checking the LoadBalancer IP
+
+
+   1. If your prod setup has a LoadBalancer IP it may take a few minutes for it to be available.
+      #+BEGIN_SRC bash
+      kubectl get svc --namespace default -w my-drupal
+      #+END_SRC
+
+      #+BEGIN_SRC bash
+      export SERVICE_IP=$(kubectl get svc --namespace default my-drupal --template "{{ range (index .status.loadBalancer.ingress 0) }}{{ . }}{{ end }}")
+      echo "Drupal URL: http://$SERVICE_IP/"
+      #+END_SRC
+
 * Attributing ingress with DNS
 
+TBD
 
 * Using an image from DDEV
+
+TBD
