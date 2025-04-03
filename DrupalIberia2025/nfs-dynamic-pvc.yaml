@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-drupal-pv-claim
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: "nfs-client" # This should match the StorageClass created by the NFS provisioner
+  resources:
+    requests:
+      storage: 1Gi
