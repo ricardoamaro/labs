@@ -159,6 +159,11 @@ Each major action is broken down into steps, with each step containing the neces
       kubectl get pvc -A
       #+end_src
 
+   7. What is going on?
+      Follow the logs of your deployment:
+      #+BEGIN_SRC bash
+      kubectl logs -f deployment/my-drupal
+      #+END_SRC
 
 *** Deployment Diagram in mermaid
 

@@ -180,6 +180,3 @@ Currently there seems to be a bug with the apache container failing with
 1.  Deploy Prometheus and Grafana for monitoring (using Helm charts or manifests).
 2.  Set up Grafana dashboards to visualize Drupal performance metrics.
 3.  Implement alerting rules in Prometheus to notify administrators of critical events.
-
-** Adding Persistent Storage for Drupal Using Helm and a manual PVC
-#+PROPERTY: header-args :results pp :var MYHOSTPATH='/home/r
