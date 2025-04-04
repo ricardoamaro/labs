@@ -120,10 +120,22 @@ drupalEmail: user@example.com
 allowEmptyPassword: true
 ## @param command Override default container command (useful when using custom images)
 ##
-command: []
+command:
+  - /bin/bash
 ## @param args Override default container args (useful when using custom images)
 ##
-args: []
+args:
+  - -c
+  - |
+    #!/bin/bash
+    set -x
+    # for i in 1 2; do
+    #   sed -i "s|'port' => 3306,|'port' => '3306',|g" /opt/bitnami/drupal/sites/default/settings.php
+    #   grep 3306 /opt/bitnami/drupal/sites/default/settings.php
+    #   /opt/bitnami/scripts/drupal/entrypoint.sh /opt/bitnami/scripts/apache/run.sh
+    #   echo "Warning: got exit code $?"
+    # done
+
 ## @param updateStrategy.type Update strategy - only really applicable for deployments with RWO PVs attached
 ## If replicas = 1, an update can get "stuck", as the previous pod remains attached to the
 ## PV, and the "incoming" pod can never start. Changing the strategy to "Recreate" will
@@ -405,7 +417,7 @@ startupProbe:
 ##
 livenessProbe:
   enabled: true
-  initialDelaySeconds: 600
+  initialDelaySeconds: 120
   periodSeconds: 10
   timeoutSeconds: 5
   failureThreshold: 5
