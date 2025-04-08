@@ -58,6 +58,9 @@ They are essential for large environments, allowing efficient, organized, and co
 kubectl create namespace drupal
 #+end_src
 
+#+RESULTS:
+: namespace/drupal created
+
 ** Install Drupal
 
 1. Deploy Drupal and MariaDB. This will use the same helm charts from Lab 1 but on a different namespace
@@ -167,14 +170,156 @@ Currently there seems to be a bug with the apache container failing with
 * Extra challenges
 
 ** CI/CD Pipeline (Basic)
-1. Set up a simple CI/CD pipeline using a tool like Jenkins or GitLab CI to automate the process of building a Drupal image, pushing it to a container registry, and deploying it to the Kubernetes cluster. (Detailed steps depend on the chosen CI/CD tool).
+1. Set up a simple CI/CD pipeline using a tool like JenkinsX or GitLab CI to automate the process of building a Drupal image, pushing it to a container registry, and deploying it to the Kubernetes cluster. (Detailed steps depend on the chosen CI/CD tool).
+
+
+*** Prerequisites
+
+1. **Kubernetes Cluster**: Ensure you have access to a running Kubernetes cluster.
+2. **Helm**: Installed and configured to manage your Kubernetes applications.
+3. **Container Registry**: A Docker registry (e.g., Docker Hub, Google Container Registry, etc.) to store your Docker images.
+4. **Jenkins**: Installed and running, with access to your source code repository and Kubernetes cluster.
+
+*** Step-by-Step Setup
+
+**** Step 1: Install Jenkins
+
+1. **Deploy Jenkins to Kubernetes** (if not already set up):
+   #+begin_src bash
+   helm repo add jenkins https://charts.jenkins.io
+   helm repo update
+   helm install jenkins jenkins/jenkins --set controller.serviceType=LoadBalancer
+   #+end_src
+
+2. **Access Jenkins**: Obtain the admin password and access Jenkins UI.
+   #+begin_src bash
+   kubectl get svc --namespace default -w jenkins
+   kubectl exec --namespace default -it svc/jenkins -c jenkins -- /bin/cat /run/secrets/additional/chart-admin-password && echo
+   #+end_src
+
+**** Step 2: Create a Jenkins Pipeline
+
+1. **Install Required Plugins**: Install plugins for Docker, Kubernetes, Git, and any other necessary integrations.
+
+2. **Create a New Pipeline Job**: In Jenkins, create a new pipeline job.
+
+3. **Configure Jenkinsfile**: Add a `Jenkinsfile` to your repository. Here's a basic example:
+
+   #+begin_src groovy
+   pipeline {
+       agent any
+       environment {
+           DOCKER_REGISTRY_CREDENTIALS = credentials('docker-registry-credentials-id')
+           KUBECONFIG_CREDENTIALS = credentials('kubeconfig-credentials-id')
+           DOCKER_IMAGE = "your-docker-repo/drupal:${env.BUILD_NUMBER}"
+       }
+       stages {
+           stage('Build') {
+               steps {
+                   script {
+                       docker.build(DOCKER_IMAGE)
+                   }
+               }
+           }
+           stage('Push') {
+               steps {
+                   script {
+                       docker.withRegistry('https://index.docker.io/v1/', DOCKER_REGISTRY_CREDENTIALS) {
+                           docker.image(DOCKER_IMAGE).push()
+                       }
+                   }
+               }
+           }
+           stage('Deploy') {
+               steps {
+                   script {
+                       withKubeConfig([credentialsId: 'KUBECONFIG_CREDENTIALS']) {
+                           sh "helm upgrade --install my-drupal bitnami/drupal --set image.repository=${DOCKER_IMAGE}"
+                       }
+                   }
+               }
+           }
+       }
+   }
+   #+end_src
+
+   - **Environment Variables**: Adjust `DOCKER_IMAGE`, `DOCKER_REGISTRY_CREDENTIALS`, and `KUBECONFIG_CREDENTIALS` as needed.
+   - **Credentials**: Ensure Jenkins has the necessary credentials configured for Docker registry and Kubernetes access.
+
+**** Step 3: Configure Jenkins
+
+1. **Credentials**:
+   - Add Docker registry credentials in Jenkins (`docker-registry-credentials-id`).
+   - Add Kubernetes credentials (Kubeconfig or token) in Jenkins (`kubeconfig-credentials-id`).
+
+2. **Source Code Management**: Connect Jenkins to your source code repository (e.g., GitHub, GitLab).
+
+3. **Trigger Builds**: Set up webhooks or polling to trigger the Jenkins job on code changes.
+
+
 
 ** Configuration Management
-1.  Create a ConfigMap with Drupal settings:
+
+A ConfigMap is a Kubernetes resource used to store configuration data in key-value pairs. It allows you to decouple configuration artifacts from image content to keep containerized applications portable. ConfigMaps are useful for managing application configuration without the need to rebuild container images or hard-code configuration data within the application itself.
+
+*** Step 1: Create a ConfigMap
+
+First, create a ConfigMap with the desired configuration settings. For example, you might want to set the site name or other Drupal-specific settings.
+
     #+begin_src bash
-    kubectl create configmap drupal-config --from-literal=site_name="My Drupal Site" -n drupal
+    kubectl create configmap drupal-config --from-literal=DRUPAL_SITE_NAME="My Drupal Site" -n default
     #+end_src
-2.  Mount the ConfigMap to the Drupal deployment.
+
+This command creates a ConfigMap named drupal-config in the default namespace with a key-value pair for DRUPAL_SITE_NAME.
+
+*** Step 2: Reference the ConfigMap in the Helm Chart
+
+To use the ConfigMap in the Bitnami Drupal chart, you need to modify the values.yaml file to include the configuration as environment variables or mounted files.
+Using Environment Variables
+
+1. Edit your values.yaml: Add an extraEnvVars section to include environment variables from the ConfigMap:
+
+    #+begin_src yaml
+    extraEnvVars:
+      - name: DRUPAL_SITE_NAME
+        valueFrom:
+          configMapKeyRef:
+            name: drupal-config
+            key: DRUPAL_SITE_NAME
+    #+end_src
+
+2. Deploy or Update the Helm Release:
+
+Use Helm to deploy the chart with the updated values:
+
+    #+begin_src bash
+    helm upgrade --install my-drupal bitnami/drupal -f values.yaml --namespace default
+    #+end_src
+
+**Using ConfigMap as a Volume**
+
+Alternatively, you can mount the ConfigMap as a volume if you need to provide configuration files to Drupal:
+
+1. Edit your values.yaml: Add a volumeMounts and volumes section:
+
+    #+begin_src yaml
+    volumeMounts:
+      - name: config-volume
+        mountPath: /etc/drupal-config
+
+    volumes:
+      - name: config-volume
+        configMap:
+          name: drupal-config
+    #+end_src
+
+2. Deploy or Update the Helm Release:
+
+    Apply the changes with Helm:
+
+    #+begin_src bash
+    helm upgrade --install my-drupal bitnami/drupal -f values.yaml --namespace default
+    #+end_src
 
 ** Effective Monitoring Strategies
 1.  Deploy Prometheus and Grafana for monitoring (using Helm charts or manifests).

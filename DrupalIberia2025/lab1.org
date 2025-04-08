@@ -43,16 +43,13 @@ Each major action is broken down into steps, with each step containing the neces
       #+END_SRC
 
       #+RESULTS:
-      :results:
-      k3d version v5.7.4
-      k3s version v1.30.4-k3s1 (default)
-      :end:
+      : k3d version v5.8.3
+      : k3s version v1.31.5-k3s1 (default)
 
 ** Step 2: Create a k3d Cluster
    :PROPERTIES:
    :CUSTOM_ID: create-cluster
    :END:
-
 
    1. Create a multi-node Kubernetes cluster named =drupal-cluster= for development and testing.
       #+BEGIN_SRC bash
@@ -81,9 +78,8 @@ Each major action is broken down into steps, with each step containing the neces
       #+END_SRC
 
       #+RESULTS:
-      :results:
-      version.BuildInfo{Version:"v3.16.1", GitCommit:"5a5449dc42be07001fd5771d56429132984ab3ab", GitTreeState:"clean", GoVersion:"go1.22.7"}
-      :end:
+      : version.BuildInfo{Version:"v3.17.2", GitCommit:"cc0bbbd6d6276b83880042c1ecb34087e84d41eb", GitTreeState:"clean", GoVersion:"go1.23.7"}
+
 
 ** Step 4: Add Bitnami Helm Chart Repository
    :PROPERTIES:
@@ -99,9 +95,8 @@ Each major action is broken down into steps, with each step containing the neces
       #+END_SRC
 
       #+RESULTS:
-      :results:
-      "bitnami" already exists with the same configuration, skipping
-      :end:
+      : "bitnami" already exists with the same configuration, skipping
+
 
    2. Update Helm repository.
       #+BEGIN_SRC bash
@@ -109,13 +104,12 @@ Each major action is broken down into steps, with each step containing the neces
       #+END_SRC
 
       #+RESULTS:
-      :results:
-      Hang tight while we grab the latest from your chart repositories...
-      ...Successfully got an update from the "nfs-subdir-external-provisioner" chart repository
-      ...Successfully got an update from the "longhorn" chart repository
-      ...Successfully got an update from the "bitnami" chart repository
-      Update Complete. ⎈Happy Helming!⎈
-      :end:
+      : Hang tight while we grab the latest from your chart repositories...
+      : ...Successfully got an update from the "nfs-subdir-external-provisioner" chart repository
+      : ...Successfully got an update from the "longhorn" chart repository
+      : ...Successfully got an update from the "bitnami" chart repository
+      : Update Complete. ⎈Happy Helming!⎈
+
 
       NOTE: repositories are cached locally at $HOME/.cache/helm/ and configs in $HOME/.config/helm/. Check 'helm env'
 
@@ -123,9 +117,7 @@ Each major action is broken down into steps, with each step containing the neces
    :PROPERTIES:
    :CUSTOM_ID: install-drupal
    :END:
-
    A minimal Drupal installation will need two pods and two persistent volume claims.
-
 
 *** Deploy Drupal using helm charts
 
@@ -149,6 +141,26 @@ Each major action is broken down into steps, with each step containing the neces
       kubectl get deployments -A
       #+end_src
 
+      #+RESULTS:
+      #+begin_example
+      NAMESPACE     NAME                                      CPU(cores)   MEMORY(bytes)
+      default       my-drupal-mariadb-0                       16m          196Mi
+      kube-system   metrics-server-5985cbc9d7-r27c5           3m           21Mi
+      default       my-drupal-6874d67b74-lshhg                2m           84Mi
+      kube-system   coredns-ccb96694c-gdzgb                   2m           14Mi
+      kube-system   local-path-provisioner-5cf85fd84d-cs48s   1m           8Mi
+      kube-system   traefik-5d45fc8cc9-l8xsc                  1m           29Mi
+      kube-system   svclb-traefik-5b7ec9c6-rh7bx              0m           0Mi
+      kube-system   svclb-traefik-5b7ec9c6-vql9c              0m           0Mi
+      kube-system   svclb-traefik-5b7ec9c6-zmrl7              0m           0Mi
+      NAMESPACE     NAME                     READY   UP-TO-DATE   AVAILABLE   AGE
+      default       my-drupal                1/1     1            1           7m13s
+      kube-system   coredns                  1/1     1            1           45m
+      kube-system   local-path-provisioner   1/1     1            1           45m
+      kube-system   metrics-server           1/1     1            1           45m
+      kube-system   traefik                  1/1     1            1           45m
+      #+end_example
+
    5. List all Helms
       #+begin_src bash
       helm list -A
@@ -162,7 +174,7 @@ Each major action is broken down into steps, with each step containing the neces
    7. What is going on?
       Follow the logs of your deployment:
       #+BEGIN_SRC bash
-      kubectl logs -f deployment/my-drupal
+      kubectl logs -f deployments/my-drupal
       #+END_SRC
 
 *** Deployment Diagram in mermaid
@@ -203,34 +215,37 @@ Each major action is broken down into steps, with each step containing the neces
       echo Password: $(kubectl get secret --namespace default my-drupal -o jsonpath="{.data.drupal-password}" | base64 -d)
       #+END_SRC
 
+      #+RESULTS:
+      : Username: user
+      : Password: pn7GyPbfqh
+
 2. Expose a port to connect to the Drupal deployment
 Only use one of the options below
 
-- OPTION 1: Use an ingress
+    - OPTION 1: Use an ingress
 	#+begin_src bash
-	#kubectl create service clusterip drupal-ip --tcp=80:80
-	kubectl create ingress my-drupal --rule="/*=my-drupal:80"
+		kubectl create ingress my-drupal --rule="/*=my-drupal:80"
 	#+end_src
 
 	- OPTION 2: Forward port 80 to the my-drupal service
 
 	Identify the Drupal service name:
 	#+begin_src bash
-	kubectl get services
+	  kubectl get services
 	#+end_src
 	You should see a service named my-drupal.
 	Forward port 80 on your local machine to the service's port:
 	#+begin_src bash
-	kubectl port-forward svc/my-drupal 80:80
+	  kubectl port-forward svc/my-drupal 80:80
 	#+end_src
 
-- OPTION 3: If that didn't work, alternately you can forward port 80 to the Drupal pod.
-#+BEGIN_SRC bash
-DPOD=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=drupal" -o jsonpath="{.items[0].metadata.name}")
-kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 80:80
-#+END_SRC
+    - OPTION 3: If that didn't work, alternately you can forward port 80 to the Drupal pod.
+    #+BEGIN_SRC bash
+    DPOD=$(kubectl get pods --namespace default -l "app.kubernetes.io/name=drupal" -o jsonpath="{.items[0].metadata.name}")
+    kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 80:80
+    #+END_SRC
 
-3. Access Drupal site at http://localhost.
+    3. Access the Drupal site at http://localhost.
 
 ** Step 7: Monitoring Drupal
 :PROPERTIES:
@@ -247,8 +262,8 @@ kubectl port-forward --namespace default --address 127.0.0.1 $DPOD 80:80
 
     #+RESULTS:
     : NAME                         CPU(cores)   MEMORY(bytes)
-    : my-drupal-7cff875dd7-nkhmj   3m           119Mi
-    : my-drupal-mariadb-0          32m          203Mi
+    : my-drupal-6874d67b74-lshhg   2m           122Mi
+    : my-drupal-mariadb-0          17m          206Mi
 
 3.  View Drupal logs:
     #+begin_src bash
@@ -261,29 +276,29 @@ Follow the on-screen instructions to complete the Drupal setup through your brow
 
 ** Step 9: Test deleting the existing pods
 
-1. In a new terminal run the command to watch the pod status
+    1. In a new terminal run the command to watch the pod status
 
-#+begin_src bash
-watch "kubectl get pods; kubectl top pod"
-#+end_src
+    #+begin_src bash
+    watch "kubectl get pods; kubectl top pod"
+    #+end_src
 
-2. Issue a delete of the drupal pod
+    2. Issue a delete of the drupal pod
 
-#+begin_src bash
-kubectl delete pods my-drupal-....
-#+end_src
+    #+begin_src bash
+    kubectl delete pods my-drupal-....
+    #+end_src
 
-3. Observe that the pods gets reconstructed in a few seconds.
+    3. Observe that the pods gets reconstructed in a few seconds.
 
 ** Step 10: Scale up the deployment to three from Drupal pods
 
-Issue the scale deployment command
+    Issue the scale deployment command
 
-#+begin_src bash
-kubectl scale deployment my-drupal --replicas=3 -n default
-#+end_src
+    #+begin_src bash
+    kubectl scale deployment my-drupal --replicas=3 -n default
+    #+end_src
 
-Observe that Drupal is scaled up immediately
+    Observe that Drupal is scaled up immediately
 
 
 * Troubleshooting
@@ -399,7 +414,6 @@ helm install my-drupal bitnami/drupal --set image.debug=true
    1. Delete the Kubernetes cluster.
       #+BEGIN_SRC bash
       kind delete cluster
-
       k3d cluster delete drupal-cluster
       #+END_SRC
    2. Delete all K8s volumes or unused docker leftovers
@@ -415,8 +429,7 @@ helm install my-drupal bitnami/drupal --set image.debug=true
 k3d cluster delete drupal-cluster;
 k3d cluster create drupal-cluster --servers 1 --agents 2 -p "80:80@loadbalancer" -p "443:443@loadbalancer";
 kubectl create namespace drupal;
-helm install my-drupal bitnami/drupal -f values.yaml -n drupal;
-ingress.networking.k8s.io/my-drupal created
+helm install my-drupal bitnami/drupal -n drupal -f values.yaml;
+kubectl create ingress my-drupal --rule="/*=my-drupal:80"
 #+END_SRC
 
-Congratulations, you have now deployed a Drupal site on a k3d Kubernetes cluster on Linux!
