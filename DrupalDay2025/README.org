@@ -3,6 +3,14 @@
 #+DESCRIPTION: A step-by-step guide for LiteLLM's enterprise-grade resilience and failover capabilities with a Drupal CMS environment.
 #+OPTIONS: toc:t num:t
 
+* Table of Contents :toc:
+- [[#introduction][Introduction]]
+- [[#prerequisites][Prerequisites]]
+- [[#environment-setup][Environment Setup]]
+  - [[#step-1-set-up-the-drupal-site-with-ddev][Step 1: Set Up the Drupal Site with DDEV]]
+  - [[#step-2-set-up-the-litellm-gateway][Step 2: Set Up the LiteLLM Gateway]]
+  - [[#step-3-connect-drupal-to-litellm][Step 3: Connect Drupal to LiteLLM]]
+
 * Introduction
 This guide provides a detailed setup of [[https://github.com/BerriAI/litellm][LiteLLM]], an open-source AI gateway, in a real-world scenario. Setup a Drupal 11 site with DDEV and connect it to a LiteLLM proxy running in Docker.
 
