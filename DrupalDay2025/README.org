@@ -1,0 +1,148 @@
+#+TITLE: How-To: LiteLLM with Drupal
+#+AUTHOR: Ricardo Amaro
+#+DESCRIPTION: A step-by-step guide for LiteLLM's enterprise-grade resilience and failover capabilities with a Drupal CMS environment.
+#+OPTIONS: toc:t num:t
+
+* Introduction
+This guide provides a detailed setup of [[https://github.com/BerriAI/litellm][LiteLLM]], an open-source AI gateway, in a real-world scenario. Setup a Drupal 11 site with DDEV and connect it to a LiteLLM proxy running in Docker.
+
+The goal of the demo is to showcase LiteLLM's automatic failover capability. We will:
+1.  Establish a working connection from Drupal to a primary LLM (e.g., GPT-4o) via LiteLLM.
+2.  Simulate a failure of the primary LLM.
+3.  Show how LiteLLM seamlessly reroutes the request to a fallback model (e.g., GPT-3.5-turbo) without any code changes in Drupal and without interrupting the end-user's workflow.
+
+* Prerequisites
+Before you begin, ensure you have the following installed and configured:
+- [[https://www.docker.com/products/docker-desktop/][Docker Desktop]]: The containerization platform for running LiteLLM and DDEV.
+- [[https://ddev.readthedocs.io/en/latest/users/install/ddev-installation/][DDEV]]: A robust local development tool for PHP projects, especially Drupal.
+- An [[https://platform.openai.com/api-keys][OpenAI API Key]]: You will need a valid API key for the demo. The setup uses two models, but they can be from the same provider.
+
+* Part 1: Environment Setup
+This section covers all the steps to get your Drupal site and LiteLLM proxy running and connected.
+
+** Step 1: Set Up the Drupal Site with DDEV
+First, we'll create a new Drupal 10 project and install the necessary modules.
+
+1.  *Create the Drupal Project*
+    Open your terminal and run the following commands:
+    #+BEGIN_SRC bash
+      # Create a project directory and navigate into it
+      mkdir drupal-litellm-demo && cd drupal-litellm-demo
+
+      # Configure DDEV for a Drupal 10 project
+      ddev config --project-type=drupal11 --docroot=web --create-docroot
+      ddev start
+
+      # Create the Drupal codebase
+      ddev composer create drupal/recommended-project
+
+      # Add Drush for command-line management
+      ddev composer require drush/drush
+    #+END_SRC
+
+2.  *Install Drupal*
+    With the codebase in place, install a fresh Drupal site:
+    #+BEGIN_SRC bash
+      ddev drush site:install --db-url=mysql://db:db@db/db -y
+    #+END_SRC
+
+3.  *Install Required Drupal Modules*
+    We need the core AI module, the Key module for secrets, and the LiteLLM provider module.
+    #+BEGIN_SRC bash
+      ddev composer require drupal/ai drupal/key drupal/ai_provider_litellm
+      ddev drush en ai key ai_provider_litellm -y
+    #+END_SRC
+
+** Step 2: Set Up the LiteLLM Gateway
+Next, we'll configure and launch the LiteLLM proxy in a separate Docker container.
+
+1.  *Create a Directory for LiteLLM*
+    Inside your project root (`drupal-litellm-demo`), create a folder to hold the LiteLLM configuration.
+    #+BEGIN_SRC bash
+      mkdir litellm && cd litellm
+    #+END_SRC
+
+2.  *Create the =config.yaml= file*
+    This file is the heart of LiteLLM. It defines our models and the critical failover logic. Create a file named `config.yaml` with this content:
+    #+BEGIN_SRC yaml
+      model_list:
+        - model_name: gpt-4-primary # A custom name for your primary model
+          litellm_params:
+            model: gpt-4o # The actual model name from OpenAI
+            api_key: "os.environ/OPENAI_API_KEY"
+
+        - model_name: gpt-3.5-fallback # A custom name for your fallback model
+          litellm_params:
+            model: gpt-3.5-turbo # The actual model name from OpenAI
+            api_key: "os.environ/OPENAI_API_KEY"
+
+      litellm_settings:
+        # This sets the fallback model for all requests
+        fallbacks:
+          - gpt-4-primary: # If this model fails...
+            - gpt-3.5-fallback # ...try this one next.
+        set_verbose: True # Enables detailed logging, perfect for a demo
+
+      server_settings:
+        port: 4000
+    #+END_SRC
+
+3.  *Create the =docker-compose.yml= file*
+    This file defines the LiteLLM service. Create `docker-compose.yml` in the `litellm` directory:
+    #+BEGIN_SRC yaml
+      version: '3.8'
+      services:
+        litellm:
+          image: ghcr.io/berriai/litellm:main-stable
+          container_name: litellm-proxy
+          ports:
+            - "4000:4000" # Exposes the proxy on localhost:4000
+          environment:
+            - OPENAI_API_KEY=${OPENAI_API_KEY} # Securely passes your API key
+          volumes:
+            - ./config.yaml:/app/config.yaml # Mounts your config file
+          command: ["--config", "/app/config.yaml"]
+    #+END_SRC
+
+4.  *Create the =.env= file for your API Key*
+    To keep your secret key out of the configuration, create an `.env` file in the `litellm` directory:
+    #+BEGIN_SRC text
+      # Replace with your actual OpenAI API key
+      OPENAI_API_KEY=sk-YourActualOpenAIKeyHere
+    #+END_SRC
+
+5.  *Start the LiteLLM Container*
+    #+BEGIN_SRC bash
+      docker-compose up -d
+    #+END_SRC
+    You can check the logs to ensure it started correctly with `docker-compose logs -f`.
+
+** Step 3: Connect Drupal to LiteLLM
+Finally, we'll configure Drupal to send all its AI requests to our new LiteLLM proxy.
+
+1.  *Log in to your Drupal site*
+    #+BEGIN_SRC bash
+      ddev drush uli
+    #+END_SRC
+
+2.  *Configure the Key module*
+    - Navigate to *Configuration* > *System* > *Keys* (`/admin/config/system/keys`).
+    - Click *Add Key*.
+    - *Key name*: `LiteLLM API Key`
+    - *Key provider*: `Configuration`
+    - *Key value*: Enter any placeholder like `not_needed`. The actual key is managed by LiteLLM, but the module requires a value here.
+    - Click *Save*.
+
+3.  *Configure the LiteLLM AI Provider module*
+    - Navigate to *Configuration* > *AI Settings* > *Providers* (`/admin/config/ai/provider`).
+    - Click *Add AI Provider*.
+    - *Label*: `My LiteLLM Gateway`
+    - *Provider Plugin*: `LiteLLM`
+    - *Base URL*: `http://litellm-proxy-ip:4000`
+    - *API Key*: Select `LiteLLM API Key` from the dropdown.
+    - Click *Save*.
+
+4.  *Set LiteLLM as the default provider*
+    - On the AI Providers page, select *My LiteLLM Gateway* as the default for all AI services and click *Save configuration*.
+
+Drupal environment with LiteLLM is now prepared!
