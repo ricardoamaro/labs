@@ -105,6 +105,8 @@ Next, we'll configure and launch the LiteLLM proxy in a separate Docker containe
          volumes:
            - postgres_data:/var/lib/postgresql/data
          restart: unless-stopped
+         networks:
+           - ddev-drupal-litellm-demo_default
 
        litellm:
          image: ghcr.io/berriai/litellm:main-stable
@@ -123,6 +125,12 @@ Next, we'll configure and launch the LiteLLM proxy in a separate Docker containe
            - ./config.yaml:/app/config.yaml
          command: ["--config", "/app/config.yaml", "--port", "4000"]
          restart: unless-stopped
+         networks:
+           - ddev-drupal-litellm-demo_default
+
+     networks: # Add this whole section at the bottom
+       ddev-drupal-litellm-demo_default:
+         external: true
 
      volumes:
        postgres_data:
@@ -182,7 +190,7 @@ Finally, we'll configure Drupal to send all its AI requests to our new LiteLLM p
     - Click *Add AI Provider*.
     - *Label*: `My LiteLLM Gateway`
     - *Provider Plugin*: `LiteLLM`
-    - *Base URL*: `http://litellm-proxy-ip:4000`
+    - *Base URL*: `http://litellm-proxy:4000` in MacOS: `http://host.docker.internal:4000`
     - *API Key*: Select `LiteLLM API Key` from the dropdown.
     - Click *Save*.
 
