@@ -17,7 +17,7 @@ Before you begin, ensure you have the following installed and configured:
 - [[https://ddev.readthedocs.io/en/latest/users/install/ddev-installation/][DDEV]]: A robust local development tool for PHP projects, especially Drupal.
 - An [[https://platform.openai.com/api-keys][OpenAI API Key]]: You will need a valid API key for the demo. The setup uses two models, but they can be from the same provider.
 
-* Part 1: Environment Setup
+* Environment Setup
 This section covers all the steps to get your Drupal site and LiteLLM proxy running and connected.
 
 ** Step 1: Set Up the Drupal Site with DDEV
@@ -56,65 +56,100 @@ First, we'll create a new Drupal 10 project and install the necessary modules.
 ** Step 2: Set Up the LiteLLM Gateway
 Next, we'll configure and launch the LiteLLM proxy in a separate Docker container.
 
-1.  *Create a Directory for LiteLLM*
-    Inside your project root (`drupal-litellm-demo`), create a folder to hold the LiteLLM configuration.
-    #+BEGIN_SRC bash
-      mkdir litellm && cd litellm
-    #+END_SRC
+1. *Create a Directory for LiteLLM*
+   Inside your project root (`drupal-litellm-demo`), create a folder to hold the LiteLLM configuration.
+   #+BEGIN_SRC bash
+     mkdir litellm
+     cd litellm
+   #+END_SRC
 
-2.  *Create the =config.yaml= file*
-    This file is the heart of LiteLLM. It defines our models and the critical failover logic. Create a file named `config.yaml` with this content:
-    #+BEGIN_SRC yaml
-      model_list:
-        - model_name: gpt-4-primary # A custom name for your primary model
-          litellm_params:
-            model: gpt-4o # The actual model name from OpenAI
-            api_key: "os.environ/OPENAI_API_KEY"
+2. *Create the =.env= file:* This file will now store all your
+   secrets. Create a file named =.env= in the =litellm= directory. *It's
+   crucial to generate your own strong, random string for the SALT_KEY.*
 
-        - model_name: gpt-3.5-fallback # A custom name for your fallback model
-          litellm_params:
-            model: gpt-3.5-turbo # The actual model name from OpenAI
-            api_key: "os.environ/OPENAI_API_KEY"
+   #+BEGIN_EXAMPLE
+     # OpenAI API Key
+     OPENAI_API_KEY=sk-YourActualOpenAIKeyHere
 
-      litellm_settings:
-        # This sets the fallback model for all requests
-        fallbacks:
-          - gpt-4-primary: # If this model fails...
-            - gpt-3.5-fallback # ...try this one next.
-        set_verbose: True # Enables detailed logging, perfect for a demo
+     # LiteLLM Proxy Security
+     LITELLM_MASTER_KEY="sk-123456789-demo-key"
+     LITELLM_SALT_KEY="generate-a-random-string-for-this" # IMPORTANT: CANNOT BE CHANGED LATER
 
-      server_settings:
-        port: 4000
-    #+END_SRC
+     # Database Credentials (for the new postgres container)
+     POSTGRES_USER=litellm
+     POSTGRES_PASSWORD=a-very-strong-password
+     POSTGRES_DB=litellm_db
+   #+END_EXAMPLE
 
-3.  *Create the =docker-compose.yml= file*
-    This file defines the LiteLLM service. Create `docker-compose.yml` in the `litellm` directory:
-    #+BEGIN_SRC yaml
-      version: '3.8'
-      services:
-        litellm:
-          image: ghcr.io/berriai/litellm:main-stable
-          container_name: litellm-proxy
-          ports:
-            - "4000:4000" # Exposes the proxy on localhost:4000
-          environment:
-            - OPENAI_API_KEY=${OPENAI_API_KEY} # Securely passes your API key
-          volumes:
-            - ./config.yaml:/app/config.yaml # Mounts your config file
-          command: ["--config", "/app/config.yaml"]
-    #+END_SRC
+3. *Create the =docker-compose.yml= file*
+   This file defines the LiteLLM service and includes a PostgreSQL service and pass all the new environment variables to the LiteLLM proxy.
+   Create `docker-compose.yml` in the `litellm` directory:
+   #+BEGIN_SRC yaml
+     version: '3.8'
+     services:
+       db:
+         image: postgres:17
+         container_name: litellm-db
+         environment:
+           POSTGRES_USER: ${POSTGRES_USER}
+           POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+           POSTGRES_DB: ${POSTGRES_DB}
+         volumes:
+           - postgres_data:/var/lib/postgresql/data
+         restart: unless-stopped
 
-4.  *Create the =.env= file for your API Key*
-    To keep your secret key out of the configuration, create an `.env` file in the `litellm` directory:
-    #+BEGIN_SRC text
-      # Replace with your actual OpenAI API key
-      OPENAI_API_KEY=sk-YourActualOpenAIKeyHere
-    #+END_SRC
+       litellm:
+         image: ghcr.io/berriai/litellm:main-stable
+         container_name: litellm-proxy
+         depends_on:
+           - db # Ensures the database starts before the proxy
+         ports:
+           - "4000:4000"
+         environment:
+           - OPENAI_API_KEY=${OPENAI_API_KEY}
+           - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+           - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+           - LITELLM_SALT_KEY=${LITELLM_SALT_KEY}
+           - STORE_MODEL_IN_DB=True
+         volumes:
+           - ./config.yaml:/app/config.yaml
+         command: ["--config", "/app/config.yaml", "--port", "4000"]
+         restart: unless-stopped
 
-5.  *Start the LiteLLM Container*
+     volumes:
+       postgres_data:
+   #+END_SRC
+
+4. *Create the =config.yaml= file*
+   This file is the heart of LiteLLM. It defines our models and the critical failover logic. Create a file named `config.yaml` with this content:
+   #+BEGIN_SRC yaml
+     model_list:
+       - model_name: gpt-4-primary
+         litellm_params:
+           model: gpt-4o
+           api_key: "os.environ/OPENAI_API_KEY"
+
+       - model_name: gpt-3.5-fallback
+         litellm_params:
+           model: gpt-3.5-turbo
+           api_key: "os.environ/OPENAI_API_KEY"
+
+     litellm_settings:
+       fallbacks:
+         - gpt-4-primary:
+           - gpt-3.5-fallback
+       set_verbose: True
+   #+END_SRC
+
+6.  *Start the LiteLLM Container*
+
     #+BEGIN_SRC bash
       docker-compose up -d
     #+END_SRC
+
+    This will now start two containers: =litellm-proxy= and =litellm-db=. Check the logs with =docker-compose logs -f= to
+     ensure both started correctly.
+
     You can check the logs to ensure it started correctly with `docker-compose logs -f`.
 
 ** Step 3: Connect Drupal to LiteLLM
@@ -128,9 +163,10 @@ Finally, we'll configure Drupal to send all its AI requests to our new LiteLLM p
 2.  *Configure the Key module*
     - Navigate to *Configuration* > *System* > *Keys* (`/admin/config/system/keys`).
     - Click *Add Key*.
-    - *Key name*: `LiteLLM API Key`
+    - *Key name*: `LiteLLM Master Key`
     - *Key provider*: `Configuration`
-    - *Key value*: Enter any placeholder like `not_needed`. The actual key is managed by LiteLLM, but the module requires a value here.
+    - *Key value*: Enter *the exact same value* you set for `LITELLM_MASTER_KEY` in your .env file (e.g., sk-123456789-demo-key).
+      This is the password for your proxy.
     - Click *Save*.
 
 3.  *Configure the LiteLLM AI Provider module*
