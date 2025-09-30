@@ -1,0 +1,22 @@
+model_list:
+  - model_name: gpt-4-primary # A custom name for your primary model
+    litellm_params:
+      model: gpt-4o # The actual model name from OpenAI
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-3.5-fallback # A custom name for your fallback model
+    litellm_params:
+      model: gpt-3.5-turbo # The actual model name from OpenAI
+      api_key: "os.environ/OPENAI_API_KEY"
+
+litellm_settings:
+  # Sets the fallback model for all requests
+  fallbacks:
+    - gpt-4-primary: # If this model fails...
+      - gpt-3.5-fallback # ...try this one next.
+  set_verbose: True # Enables detailed logging, perfect for a demo
+
+# Optional: General settings for the proxy server
+server_settings:
+  port: 4000
+
