@@ -1,22 +1,85 @@
+# ==============================================================================
+# LiteLLM Configuration File
+# ==============================================================================
+
+# This section defines all the individual AI models this proxy can connect to.
+# Each model has a custom 'model_name' that you will use in your API calls.
 model_list:
-  - model_name: gpt-4-primary # A custom name for your primary model
+  # --- Expensive OpenAI Model ---
+  # Your main, high-quality model.
+  - model_name: gpt-4o
     litellm_params:
-      model: gpt-4o # The actual model name from OpenAI
+      model: gpt-4o # The actual model identifier from OpenAI
       api_key: "os.environ/OPENAI_API_KEY"
 
-  - model_name: gpt-3.5-fallback # A custom name for your fallback model
+  # --- Primary OpenAI Model ---
+  # Your main, high-quality model.
+  - model_name: gpt-4.1
     litellm_params:
-      model: gpt-3.5-turbo # The actual model name from OpenAI
+      model: gpt-4.1 # The actual model identifier from OpenAI
       api_key: "os.environ/OPENAI_API_KEY"
 
+  # --- Fallback OpenAI Model ---
+  # A cheaper, faster model to be used if the premium ones fail.
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  # --- Fallback OpenAI Model ---
+  # A cheaper, faster model to be used if the premium ones fail.
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  # --- Google Gemini Model ---
+  # A premium alternative model from Google.
+  - model_name: gemini-pro-premium
+    litellm_params:
+      model: gemini/gemini-2.5-flash # The actual model identifier from Google
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  # --- Chained LiteLLM Proxy Model ---
+  # This connects to ANOTHER LiteLLM proxy, treating it like a model.
+  # This is useful for routing requests between different departments or environments.
+  - model_name: claude-sonnet-4
+    litellm_params:
+      # IMPORTANT: This must match a 'model_name' on your OTHER proxy's config.
+      model: openai/anthropic.claude-sonnet-4
+      # The API base URL of your second LiteLLM instance.
+      api_base: "os.environ/LITELLM_GW_URL"
+      # The master key for your OTHER LiteLLM proxy.
+      api_key: "os.environ/LITELLM_API_KEY"
+
+  - model_name: claude-sonnet-3.5
+    litellm_params:
+      # IMPORTANT: This must match a 'model_name' on your OTHER proxy's config.
+      model: openai/anthropic.claude-3-5-haiku
+      # The API base URL of your second LiteLLM instance.
+      api_base: "os.environ/LITELLM_GW_URL"
+      # The master key for your OTHER LiteLLM proxy.
+      api_key: "os.environ/LITELLM_API_KEY"
+
+# ==============================================================================
+# General Proxy Settings
+# ==============================================================================
 litellm_settings:
-  # Sets the fallback model for all requests
+  # --- Enhanced Fallback Strategy ---
+  # This defines a chain of models to try if a request fails.
+  # It now demonstrates multi-provider resilience.
   fallbacks:
-    - gpt-4-primary: # If this model fails...
-      - gpt-3.5-fallback # ...try this one next.
-  set_verbose: True # Enables detailed logging, perfect for a demo
+    - gpt-4.1: # If the primary GPT-4 model fails...
+        - gemini-2.5-flash # ...first, try the premium Gemini model...
+        - gpt-3.5-turbo # ...if that also fails, use the cheap and reliable GPT-3.5.
 
-# Optional: General settings for the proxy server
+  # --- Verbose Logging ---
+  # Enables detailed logging, which is great for debugging and demos.
+  set_verbose: True
+
+# ==============================================================================
+# Optional Server Settings
+# ==============================================================================
 server_settings:
+  # Sets the port the proxy will run on.
   port: 4000
-

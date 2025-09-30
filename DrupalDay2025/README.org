@@ -61,6 +61,12 @@ First, we'll create a new Drupal 10 project and install the necessary modules.
       ddev drush en ai key ai_provider_litellm ai_chatbot ai_ckeditor -y
     #+END_SRC
 
+4.  Check status
+    #+BEGIN_SRC bash
+      ddev status
+    #+END_SRC
+
+
 ** Step 2: Set Up the LiteLLM Gateway
 Next, we'll configure and launch the LiteLLM proxy in a separate Docker container.
 
