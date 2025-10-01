@@ -22,10 +22,16 @@ services:
       - "4000:4000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
       - LITELLM_SALT_KEY=${LITELLM_SALT_KEY}
       - STORE_MODEL_IN_DB=True
+      - LITELLM_GW_URL=${LITELLM_GW_URL}
+      - LITELLM_API_KEY=${LITELLM_API_KEY}
+      - OLLAMA_API_BASE=${OLLAMA_API_BASE}
     volumes:
       - ./config.yaml:/app/config.yaml
     command: ["--config", "/app/config.yaml", "--port", "4000"]

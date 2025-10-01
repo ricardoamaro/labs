@@ -9,36 +9,61 @@ model_list:
   # Your main, high-quality model.
   - model_name: gpt-4o
     litellm_params:
-      model: gpt-4o # The actual model identifier from OpenAI
+      model: gpt-4o
       api_key: "os.environ/OPENAI_API_KEY"
 
   # --- Primary OpenAI Model ---
   # Your main, high-quality model.
   - model_name: gpt-4.1
     litellm_params:
-      model: gpt-4.1 # The actual model identifier from OpenAI
+      model: gpt-4.1
       api_key: "os.environ/OPENAI_API_KEY"
 
-  # --- Fallback OpenAI Model ---
-  # A cheaper, faster model to be used if the premium ones fail.
   - model_name: gpt-3.5-turbo
     litellm_params:
       model: gpt-3.5-turbo
       api_key: "os.environ/OPENAI_API_KEY"
 
-  # --- Fallback OpenAI Model ---
-  # A cheaper, faster model to be used if the premium ones fail.
   - model_name: gpt-4.1-mini
     litellm_params:
       model: gpt-4.1-mini
       api_key: "os.environ/OPENAI_API_KEY"
 
+  # --- NEW: OpenAI Embedding Model ---
+  - model_name: openai-text-embedding-ada-002
+    litellm_params:
+      # Use a dedicated, low-cost embedding model like text-embedding-ada-002
+      model: openai/text-embedding-ada-002
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      mode: "embedding" # Explicitly marks this model for embedding tasks
+      max_tokens: 8192 # Example context window size (check current model limits)
+      input_cost_per_token: 0.00000010 # Example cost per 1K tokens
+
   # --- Google Gemini Model ---
   # A premium alternative model from Google.
-  - model_name: gemini-pro-premium
+  - model_name: gemini-2.5-pro
+    litellm_params:
+      model: gemini/gemini-2.5-pro # The actual model identifier from Google
+      api_key: "os.environ/GEMINI_API_KEY"
+
+  - model_name: gemini-2.5-flash
     litellm_params:
       model: gemini/gemini-2.5-flash # The actual model identifier from Google
       api_key: "os.environ/GEMINI_API_KEY"
+
+  # --- NEW: Gemini Embedding Model (via Google/Vertex AI) ---
+  - model_name: gemini-text-embedding-004
+    litellm_params:
+      # Use the recommended Google embedding model (e.g., text-embedding-004)
+      model: gemini/text-embedding-004
+      api_key: "os.environ/GEMINI_API_KEY" # Or GOOGLE_API_KEY, depending on setup
+      # If using Vertex AI, you may need additional params like api_base, project_id, and location
+      # api_base: "https://<REGION>-aiplatform.googleapis.com"
+      # api_version: "v1"
+    model_info:
+      mode: "embedding"
+      base_model: "gemini-2.5"
 
   # --- Chained LiteLLM Proxy Model ---
   # This connects to ANOTHER LiteLLM proxy, treating it like a model.
@@ -52,27 +77,89 @@ model_list:
       # The master key for your OTHER LiteLLM proxy.
       api_key: "os.environ/LITELLM_API_KEY"
 
+  - model_name: claude-sonnet-3.7
+    litellm_params:
+      model: openai/anthropic.claude-3-7-sonnet
+      api_base: "os.environ/LITELLM_GW_URL"
+      api_key: "os.environ/LITELLM_API_KEY"
+
   - model_name: claude-sonnet-3.5
     litellm_params:
-      # IMPORTANT: This must match a 'model_name' on your OTHER proxy's config.
       model: openai/anthropic.claude-3-5-haiku
-      # The API base URL of your second LiteLLM instance.
       api_base: "os.environ/LITELLM_GW_URL"
-      # The master key for your OTHER LiteLLM proxy.
       api_key: "os.environ/LITELLM_API_KEY"
+
+  # --- Ollama Local Model Deployment ---
+  - model_name: ollama-mistral
+    litellm_params:
+      # Use the 'ollama/' prefix followed by the model name you pulled in Ollama (e.g., llama2, mistral, etc.) [5]
+      model: ollama/mistral
+      # The default API base for a local Ollama server [5, 6]
+      api_base: "os.environ/OLLAMA_API_BASE"
+      # Typically, no API key is required for local/Ollama instances, so it can be set to "none" [3].
+      api_key: "none"
+
+  - model_name: ollama-qwen3
+    litellm_params:
+      model: ollama/qwen3
+      api_base: "os.environ/OLLAMA_API_BASE"
+      api_key: "none"
+
+  - model_name: ollama-gpt-oss
+    litellm_params:
+      model: ollama/gpt-oss
+      api_base: "os.environ/OLLAMA_API_BASE"
+      api_key: "none"
+
+  - model_name: ollama-llama3.1
+    litellm_params:
+      model: ollama/llama3.1
+      api_base: "os.environ/OLLAMA_API_BASE"
+      api_key: "none"
+
+  - model_name: ollama-mxbai-embed-large
+    litellm_params:
+      model: ollama/mxbai-embed-large
+      api_base: "os.environ/OLLAMA_API_BASE"
+      api_key: "none"
+    model_info:
+      mode: "embedding"
+      input_cost_per_token: 0
+
+  - model_name: ollama-nomic-embed-text
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: "os.environ/OLLAMA_API_BASE"
+      api_key: "none"
+    model_info:
+      mode: "embedding"
+      input_cost_per_token: 0
 
 # ==============================================================================
 # General Proxy Settings
 # ==============================================================================
-litellm_settings:
-  # --- Enhanced Fallback Strategy ---
-  # This defines a chain of models to try if a request fails.
-  # It now demonstrates multi-provider resilience.
-  fallbacks:
-    - gpt-4.1: # If the primary GPT-4 model fails...
-        - gemini-2.5-flash # ...first, try the premium Gemini model...
-        - gpt-3.5-turbo # ...if that also fails, use the cheap and reliable GPT-3.5.
 
+router_settings:
+  # --- Model-Specific Fallback Chains (Router Setting) ---
+  fallbacks:
+    - gpt-4.1: # If the primary model gpt-4.1 fails...
+        - gpt-3.5-turbo # ...first, try GPT-3.5.
+        - gemini-2.5-flash # ... then Gemini...
+    - claude-sonnet-4: # If the primary model claude-sonnet-4 fails...
+        - claude-sonnet-3.7 # ...try the previous version.
+        - claude-sonnet-3.5 # ...try the previous version.
+    - gemini-2.5-pro: # If the primary model claude-sonnet-4 fails...
+        - gemini-2.5-flash # ...try the previous version.
+  max_fallbacks: 5
+
+general_settings:
+  # Setting the default model for /v1/embeddings calls
+  embedding_model: "openai-text-embedding-ada-002"
+
+litellm_settings:
+  # It is also good practice to define a global fallback list here
+  # for any model that lacks a specific router_settings fallback definition.
+  default_fallbacks: ["gpt-3.5-turbo"]
   # --- Verbose Logging ---
   # Enables detailed logging, which is great for debugging and demos.
   set_verbose: True
