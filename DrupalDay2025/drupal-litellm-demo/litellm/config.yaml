@@ -6,10 +6,21 @@
 # Each model has a custom 'model_name' that you will use in your API calls.
 model_list:
   # --- Expensive OpenAI Model ---
+  # --- Expensive OpenAI Model ---
   # Your main, high-quality model.
   - model_name: gpt-4o
     litellm_params:
       model: gpt-4o
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-5
+    litellm_params:
+      model: gpt-5
+      api_key: "os.environ/OPENAI_API_KEY"
+
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: gpt-5-mini
       api_key: "os.environ/OPENAI_API_KEY"
 
   # --- Primary OpenAI Model ---
@@ -18,6 +29,7 @@ model_list:
     litellm_params:
       model: gpt-4.1
       api_key: "os.environ/OPENAI_API_KEY"
+      #api_key: "sk-expired-token-001"
 
   - model_name: gpt-3.5-turbo
     litellm_params:
@@ -142,6 +154,8 @@ model_list:
 router_settings:
   # --- Model-Specific Fallback Chains (Router Setting) ---
   fallbacks:
+    - gpt-4o: # If the primary model gpt-4o fails...
+        - gpt-4.1 # ...try gpt-4.1
     - gpt-4.1: # If the primary model gpt-4.1 fails...
         - gpt-3.5-turbo # ...first, try GPT-3.5.
         - gemini-2.5-flash # ... then Gemini...
@@ -149,7 +163,9 @@ router_settings:
         - claude-sonnet-3.7 # ...try the previous version.
         - claude-sonnet-3.5 # ...try the previous version.
     - gemini-2.5-pro: # If the primary model claude-sonnet-4 fails...
+        - claude-sonnet-4 # Use the second best one
         - gemini-2.5-flash # ...try the previous version.
+
   max_fallbacks: 5
 
 general_settings:
@@ -162,7 +178,18 @@ litellm_settings:
   default_fallbacks: ["gpt-3.5-turbo"]
   # --- Verbose Logging ---
   # Enables detailed logging, which is great for debugging and demos.
-  set_verbose: True
+  set_verbose: true
+
+  cache: false # "true" requires pip install 'litellm[caching]'
+  cache_params:
+    # type: "memory"
+    type: "disk"
+    # Common Cache Settings:
+    mode: "default_on" # Default is off
+    ttl: 86400 # Setting a longer TTL for disk cache (e.g., 24 hours)
+    supported_call_types:
+      - "acompletion" # Cache chat completions (e.g., /v1/chat/completions)
+      - "aembedding" # Cache embedding calls (e.g., /v1/embeddings)
 
 # ==============================================================================
 # Optional Server Settings
