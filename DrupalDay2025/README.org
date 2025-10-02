@@ -57,8 +57,8 @@ First, we'll create a new Drupal 10 project and install the necessary modules.
 3.  *Install Required Drupal Modules*
     We need the core AI module, the Key module for secrets, and the LiteLLM provider module.
     #+BEGIN_SRC bash
-      ddev composer require drupal/ai drupal/key drupal/ai_provider_litellm
-      ddev drush en ai key ai_provider_litellm ai_chatbot ai_ckeditor -y
+      ddev composer require drupal/ai drupal/key drupal/ai_provider_litellm drupal/ai_automators 'drupal/ai_media_image:^1.0@alpha'
+      ddev drush en ai key ai_provider_litellm ai_chatbot ai_ckeditor ai_automators ai_media_image -y
     #+END_SRC
 
 4.  Check status

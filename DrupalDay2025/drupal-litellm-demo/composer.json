@@ -17,6 +17,8 @@
     "require": {
         "composer/installers": "^2.3",
         "drupal/ai": "^1.1",
+        "drupal/ai_automators": "^1.1",
+        "drupal/ai_media_image": "^1.0@alpha",
         "drupal/ai_provider_litellm": "^1.1",
         "drupal/core-composer-scaffold": "^11.2",
         "drupal/core-project-message": "^11.2",

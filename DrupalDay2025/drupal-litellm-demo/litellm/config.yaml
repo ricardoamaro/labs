@@ -5,40 +5,89 @@
 # This section defines all the individual AI models this proxy can connect to.
 # Each model has a custom 'model_name' that you will use in your API calls.
 model_list:
-  # --- Expensive OpenAI Model ---
+  # --- Primary OpenAI Model ---
+  - model_name: gpt-5
+    litellm_params:
+      model: openai/gpt-5
+      # --- SIMULATION STEP: Use an invalid key to force a 401 error ---
+      # api_key: "sk-expired-token-001"
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gpt-5"
+      input_cost_per_token: 0.00000125 # $1.25 / 1M tokens
+      output_cost_per_token: 0.00001 # $10.00 / 1M tokens
+
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: openai/gpt-5-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gpt-5-mini"
+      input_cost_per_token: 0.00000025 # $0.25 / 1M tokens
+      output_cost_per_token: 0.000002 # $2.00 / 1M tokens
+
   # --- Expensive OpenAI Model ---
   # Your main, high-quality model.
   - model_name: gpt-4o
     litellm_params:
-      model: gpt-4o
+      model: openai/gpt-4o
+      # --- SIMULATION STEP: Use an invalid key to force a 401 error ---
+      #api_key: "sk-expired-token-001"
       api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gpt-4o"
+      input_cost_per_token: 0.0000025 # $2.50 / 1M tokens
+      output_cost_per_token: 0.00001 # $10.00 / 1M tokens
 
-  - model_name: gpt-5
+  - model_name: gpt-4o-mini
     litellm_params:
-      model: gpt-5
+      model: openai/gpt-4o-mini
       api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gpt-4o-mini"
+      input_cost_per_token: 0.00000015 # $0.15 / 1M tokens
+      output_cost_per_token: 0.0000006 # $0.60 / 1M tokens
 
-  - model_name: gpt-5-mini
+  - model_name: gpt-4-turbo-vision
     litellm_params:
-      model: gpt-5-mini
+      model: openai/gpt-4-turbo-2024-04-09
       api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gpt-4-turbo"
+      input_cost_per_token: 0.00001
+      output_cost_per_token: 0.00003
 
-  # --- Primary OpenAI Model ---
+  - model_name: dall-e-3
+    litellm_params:
+      model: openai/dall-e-3
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      base_model: "dall-e-3"
+      mode: "image_generation"
+
   # Your main, high-quality model.
   - model_name: gpt-4.1
     litellm_params:
       model: gpt-4.1
       api_key: "os.environ/OPENAI_API_KEY"
-      #api_key: "sk-expired-token-001"
-
-  - model_name: gpt-3.5-turbo
-    litellm_params:
-      model: gpt-3.5-turbo
-      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
 
   - model_name: gpt-4.1-mini
     litellm_params:
       model: gpt-4.1-mini
+      api_key: "os.environ/OPENAI_API_KEY"
+    model_info:
+      supports_vision: True
+
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
       api_key: "os.environ/OPENAI_API_KEY"
 
   # --- NEW: OpenAI Embedding Model ---
@@ -56,13 +105,54 @@ model_list:
   # A premium alternative model from Google.
   - model_name: gemini-2.5-pro
     litellm_params:
-      model: gemini/gemini-2.5-pro # The actual model identifier from Google
+      model: gemini/gemini-2.5-pro
       api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gemini-2.5-pro"
+      input_cost_per_token: 0.00000125 # $1.25 / 1M tokens
+      output_cost_per_token: 0.00001 # $10.00 / 1M tokens
 
   - model_name: gemini-2.5-flash
     litellm_params:
-      model: gemini/gemini-2.5-flash # The actual model identifier from Google
+      model: gemini/gemini-2.5-flash
       api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      supports_vision: True
+      base_model: "gemini-2.5-flash"
+      input_cost_per_token: 0.0000003 # $0.30 / 1M tokens
+      output_cost_per_token: 0.0000025 # $2.50 / 1M tokens
+
+  # --- Image Generation Models ---
+  - model_name: gemini-2.5-flash-image-preview
+    litellm_params:
+      model: gemini/gemini-2.5-flash-image-preview
+      api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      base_model: "gemini-2.5-flash-image-preview"
+      mode: "image_generation"
+      # Pricing is per-image, not per-token.
+      # This is equivalent to $0.039 per image.
+      output_cost_per_token: 0.00003
+
+  - model_name: imagen-4
+    litellm_params:
+      model: gemini/imagen-4
+      api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      base_model: "imagen-4"
+      mode: "image_generation"
+      # Per-image pricing varies by quality.
+      # Standard image is $0.04.
+
+  - model_name: imagen-3
+    litellm_params:
+      model: gemini/imagen-3
+      api_key: "os.environ/GEMINI_API_KEY"
+    model_info:
+      base_model: "imagen-3"
+      mode: "image_generation"
+      # Per-image pricing is $0.03.
 
   # --- NEW: Gemini Embedding Model (via Google/Vertex AI) ---
   - model_name: gemini-text-embedding-004
@@ -80,7 +170,7 @@ model_list:
   # --- Chained LiteLLM Proxy Model ---
   # This connects to ANOTHER LiteLLM proxy, treating it like a model.
   # This is useful for routing requests between different departments or environments.
-  - model_name: claude-sonnet-4
+  - model_name: anthropic.claude-sonnet-4
     litellm_params:
       # IMPORTANT: This must match a 'model_name' on your OTHER proxy's config.
       model: openai/anthropic.claude-sonnet-4
@@ -88,18 +178,35 @@ model_list:
       api_base: "os.environ/LITELLM_GW_URL"
       # The master key for your OTHER LiteLLM proxy.
       api_key: "os.environ/LITELLM_API_KEY"
+    model_info:
+      base_model: "claude-4"
+      # Pricing is speculative, based on provided links.
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+      max_tokens: 200000 # Speculative
 
-  - model_name: claude-sonnet-3.7
+  - model_name: anthropic.claude-sonnet-3.7
     litellm_params:
       model: openai/anthropic.claude-3-7-sonnet
       api_base: "os.environ/LITELLM_GW_URL"
       api_key: "os.environ/LITELLM_API_KEY"
+    model_info:
+      base_model: "claude-3.7-sonnet"
+      # Pricing is speculative, based on provided links.
+      input_cost_per_token: 0.000003
+      output_cost_per_token: 0.000015
+      max_tokens: 200000 # Speculative
 
-  - model_name: claude-sonnet-3.5
+  - model_name: anthropic.claude-sonnet-3.5
     litellm_params:
       model: openai/anthropic.claude-3-5-haiku
       api_base: "os.environ/LITELLM_GW_URL"
       api_key: "os.environ/LITELLM_API_KEY"
+    model_info:
+      base_model: "claude-3.5-sonnet"
+      input_cost_per_token: 0.000003 # $3.00 / 1M tokens
+      output_cost_per_token: 0.000015 # $15.00 / 1M tokens
+      max_tokens: 200000
 
   # --- Ollama Local Model Deployment ---
   - model_name: ollama-mistral
@@ -154,6 +261,8 @@ model_list:
 router_settings:
   # --- Model-Specific Fallback Chains (Router Setting) ---
   fallbacks:
+    - gpt-5: # If the primary model gpt-5 fails...
+        - gpt-4.1 # ...try gpt-4.1
     - gpt-4o: # If the primary model gpt-4o fails...
         - gpt-4.1 # ...try gpt-4.1
     - gpt-4.1: # If the primary model gpt-4.1 fails...
@@ -176,9 +285,7 @@ litellm_settings:
   # It is also good practice to define a global fallback list here
   # for any model that lacks a specific router_settings fallback definition.
   default_fallbacks: ["gpt-3.5-turbo"]
-  # --- Verbose Logging ---
-  # Enables detailed logging, which is great for debugging and demos.
-  set_verbose: true
+  set_verbose: True
 
   cache: false # "true" requires pip install 'litellm[caching]'
   cache_params:

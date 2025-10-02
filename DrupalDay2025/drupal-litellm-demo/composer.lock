@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "aff5298a13be537b03663a8f8a3fceff",
+    "content-hash": "a7aef93503cd24d3304af130af81766d",
     "packages": [
         {
             "name": "asm89/stack-cors",
@@ -1192,6 +1192,130 @@
             }
         },
         {
+            "name": "drupal/ai_automators",
+            "version": "1.1.5",
+            "require": {
+                "drupal/ai": "*",
+                "drupal/core": "^10.2 || ^11",
+                "drupal/token": "*"
+            },
+            "type": "metapackage",
+            "extra": {
+                "drupal": {
+                    "version": "1.1.5",
+                    "datestamp": "1759308529",
+                    "security-coverage": {
+                        "status": "covered",
+                        "message": "Covered by Drupal's security advisory policy"
+                    }
+                }
+            },
+            "notification-url": "https://packages.drupal.org/8/downloads",
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "a.dmitriiev",
+                    "homepage": "https://www.drupal.org/user/3235287"
+                },
+                {
+                    "name": "abhisekmazumdar",
+                    "homepage": "https://www.drupal.org/user/3557964"
+                },
+                {
+                    "name": "andrewbelcher",
+                    "homepage": "https://www.drupal.org/user/655282"
+                },
+                {
+                    "name": "gxleano",
+                    "homepage": "https://www.drupal.org/user/3591999"
+                },
+                {
+                    "name": "kevinquillen",
+                    "homepage": "https://www.drupal.org/user/317279"
+                },
+                {
+                    "name": "kristen pol",
+                    "homepage": "https://www.drupal.org/user/8389"
+                },
+                {
+                    "name": "marcus_johansson",
+                    "homepage": "https://www.drupal.org/user/385947"
+                },
+                {
+                    "name": "scott_euser",
+                    "homepage": "https://www.drupal.org/user/3267594"
+                },
+                {
+                    "name": "seogow",
+                    "homepage": "https://www.drupal.org/user/3065779"
+                },
+                {
+                    "name": "valthebald",
+                    "homepage": "https://www.drupal.org/user/239562"
+                },
+                {
+                    "name": "wouters_f",
+                    "homepage": "https://www.drupal.org/user/721548"
+                },
+                {
+                    "name": "yautja_cetanu",
+                    "homepage": "https://www.drupal.org/user/626050"
+                }
+            ],
+            "description": "Allows AI and other tools and services to automatically generate field values on content creation.",
+            "homepage": "https://www.drupal.org/project/ai",
+            "support": {
+                "source": "https://git.drupalcode.org/project/ai"
+            }
+        },
+        {
+            "name": "drupal/ai_media_image",
+            "version": "1.0.0-alpha4",
+            "source": {
+                "type": "git",
+                "url": "https://git.drupalcode.org/project/ai_media_image.git",
+                "reference": "1.0.0-alpha4"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://ftp.drupal.org/files/projects/ai_media_image-1.0.0-alpha4.zip",
+                "reference": "1.0.0-alpha4",
+                "shasum": "f0f5343bdd1c748a381558ff7765e501a3caee24"
+            },
+            "require": {
+                "drupal/ai": "*",
+                "drupal/core": "^10.2 || ^11"
+            },
+            "type": "drupal-module",
+            "extra": {
+                "drupal": {
+                    "version": "1.0.0-alpha4",
+                    "datestamp": "1749753508",
+                    "security-coverage": {
+                        "status": "not-covered",
+                        "message": "Alpha releases are not covered by Drupal security advisories."
+                    }
+                }
+            },
+            "notification-url": "https://packages.drupal.org/8/downloads",
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "coffeymachine",
+                    "homepage": "https://www.drupal.org/user/794774"
+                }
+            ],
+            "description": "Create a media entity image from a prompt to the AI text-to-image model.",
+            "homepage": "https://www.drupal.org/project/ai_media_image",
+            "support": {
+                "source": "https://git.drupalcode.org/project/ai_media_image"
+            }
+        },
+        {
             "name": "drupal/ai_provider_litellm",
             "version": "1.1.0",
             "source": {
@@ -1770,6 +1894,78 @@
             "support": {
                 "source": "https://git.drupalcode.org/project/key",
                 "issues": "http://drupal.org/project/key"
+            }
+        },
+        {
+            "name": "drupal/token",
+            "version": "1.16.0",
+            "source": {
+                "type": "git",
+                "url": "https://git.drupalcode.org/project/token.git",
+                "reference": "8.x-1.16"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://ftp.drupal.org/files/projects/token-8.x-1.16.zip",
+                "reference": "8.x-1.16",
+                "shasum": "f7ae77316ef8135068d995c09507da7517b20572"
+            },
+            "require": {
+                "drupal/core": "^9.2 || ^10 || ^11"
+            },
+            "require-dev": {
+                "drupal/book": "*"
+            },
+            "type": "drupal-module",
+            "extra": {
+                "drupal": {
+                    "version": "8.x-1.16",
+                    "datestamp": "1757151197",
+                    "security-coverage": {
+                        "status": "covered",
+                        "message": "Covered by Drupal's security advisory policy"
+                    }
+                },
+                "drush": {
+                    "services": {
+                        "drush.services.yml": ">=9"
+                    }
+                }
+            },
+            "notification-url": "https://packages.drupal.org/8/downloads",
+            "license": [
+                "GPL-2.0-or-later"
+            ],
+            "authors": [
+                {
+                    "name": "berdir",
+                    "homepage": "https://www.drupal.org/user/214652"
+                },
+                {
+                    "name": "dave reid",
+                    "homepage": "https://www.drupal.org/user/53892"
+                },
+                {
+                    "name": "eaton",
+                    "homepage": "https://www.drupal.org/user/16496"
+                },
+                {
+                    "name": "fago",
+                    "homepage": "https://www.drupal.org/user/16747"
+                },
+                {
+                    "name": "greggles",
+                    "homepage": "https://www.drupal.org/user/36762"
+                },
+                {
+                    "name": "mikeryan",
+                    "homepage": "https://www.drupal.org/user/4420"
+                }
+            ],
+            "description": "Provides a user interface for the Token API, some missing core tokens.",
+            "homepage": "https://www.drupal.org/project/token",
+            "support": {
+                "source": "https://git.drupalcode.org/project/token"
             }
         },
         {
@@ -6918,7 +7114,9 @@
     "packages-dev": [],
     "aliases": [],
     "minimum-stability": "stable",
-    "stability-flags": {},
+    "stability-flags": {
+        "drupal/ai_media_image": 15
+    },
     "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {},
