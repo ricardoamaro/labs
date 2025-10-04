@@ -10,7 +10,6 @@ model_list:
     litellm_params:
       model: openai/gpt-5
       # --- SIMULATION STEP: Use an invalid key to force a 401 error ---
-      # api_key: "sk-expired-token-001"
       api_key: "os.environ/OPENAI_API_KEY"
     model_info:
       supports_vision: True
@@ -74,6 +73,7 @@ model_list:
   - model_name: gpt-4.1
     litellm_params:
       model: gpt-4.1
+      # api_key: "sk-expired-token-001"
       api_key: "os.environ/OPENAI_API_KEY"
     model_info:
       supports_vision: True
@@ -280,6 +280,9 @@ router_settings:
 general_settings:
   # Setting the default model for /v1/embeddings calls
   embedding_model: "openai-text-embedding-ada-002"
+  store_prompts_in_spend_logs: true
+  turn_off_message_logging: false # Explicitly ensures message content is logged to callbacks (default behavior)
+  # success_callback: ["langfuse"] # Ensure a callback is enabled to receive the logs
 
 litellm_settings:
   # It is also good practice to define a global fallback list here
