@@ -339,6 +339,8 @@ Then go to `/admin/config/ai/providers` → LiteLLM:
 
 Save — confirm green status.
 
+> **Security Note:** Never commit API keys to version control. The `.env` files and any configuration containing secrets should be added to `.gitignore`. Use environment variables or a secrets manager for production deployments. Consider rotating the LiteLLM API key periodically and using Drupal's built-in key management (`/admin/config/system/keys`) to store the proxy key separately from the LiteLLM provider key.
+
 ---
 
 ## Section 8: Create the AI Agent
