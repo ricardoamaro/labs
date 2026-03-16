@@ -1,1381 +1,856 @@
 # Architecting a Production-Grade AI Agent with Drupal and Elasticsearch
 
-This tutorial will guide you through creating a production-ready AI agent using Drupal as your content repository and the Elastic AI Agent Builder for intelligent reasoning and orchestration. By the end, you'll have a working system that can answer complex questions using your private data through Context Engineering.
+This tutorial guides you through creating an AI-powered content search system using Drupal as your content repository and Elasticsearch with ELSER (Elastic Learned Sparse EncodeR) for semantic search. By the end you'll have a working system that can answer complex questions using your private Drupal content through hybrid keyword + semantic search.
+
+## Architecture
+
+```
+Drupal (content) → drupal/ai (AI abstraction) → drupal/search_api_elasticsearch_client → Elasticsearch (ELSER + vector search)
+```
 
 ## Prerequisites
 
-Before starting this tutorial, ensure you have the following installed:
-
 - **Docker** (version 20.10 or higher)
 - **DDEV** (latest version)
-- **Composer** (PHP dependency manager)
-- **Git** (version control)
-- **curl** (command-line tool)
-- **Node.js** and **npm** (for MCP Inspector)
-- **Drush** (Drupal command-line tool, via DDEV)
+- **Git**
+- **curl**
+- **Node.js** and **npm** (for MCP Inspector, optional)
 - At least **8GB RAM** and **30GB free disk space**
 - Ports **9200** (Elasticsearch), **5601** (Kibana), and **33000** (DDEV) available
 
-### Installation Instructions
+> **Linux users:** Note that `host.docker.internal` is not automatic on Linux — this tutorial handles that for you.
 
-#### Install Docker
-```bash
-# For Ubuntu/Debian
-sudo apt update
-sudo apt install docker.io docker-compose
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-
-# For macOS (requires Homebrew)
-brew install docker
-
-# For Windows
-# Download from https://www.docker.com/products/docker-desktop
-```
-
-#### Install DDEV
-```bash
-# For Linux/macOS
-curl -fsSL https://raw.githubusercontent.com/drud/ddev/master/scripts/install_ddev.sh | bash
-
-# For Windows (PowerShell)
-iwr -UseBasicParsing https://raw.githubusercontent.com/drud/ddev/master/scripts/install_ddev.ps1 | iex
-```
-
-#### Install Drush
-```bash
-# Global installation
-composer global require drush/drush
-export PATH="$HOME/.composer/vendor/bin:$PATH"
-```
-
-#### Install Node.js and npm
-```bash
-# For Ubuntu/Debian
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# For macOS (requires Homebrew)
-brew install node
-
-# For Windows
-# Download from https://nodejs.org/
-```
-
-## Section 1: Local Environment and Drupal Foundation
-
-### 1.1 Project Initialization
-
-**Step 1: Verify Prerequisites**
-Before starting, verify all prerequisites are installed:
+### Verify prerequisites
 
 ```bash
-# Check Docker
-docker --version
-docker-compose --version
-
-# Check DDEV
-ddev version
-
-# Check Git
+docker --version        # 20.10+
+ddev version            # latest
 git --version
-
-# Check curl
 curl --version
-
-# Check Node.js and npm
-node --version
-npm --version
-
-# Check available ports
-netstat -tuln 2>/dev/null | grep -E ':(9200|5601)' || echo "Use 'sudo netstat -tulpn' to check ports with process information"
+node --version          # optional, for MCP Inspector
 ```
 
-**Step 2: Create a dedicated directory and configure your Drupal 10/11 environment**
-This step establishes a safe, containerised workspace for your CMS using DDEV, ensuring that your local settings match a production-ready Linux environment.
+---
+
+## Section 1: Environment Setup
+
+### 1.1 Clone the Repository
+
+The repository includes pre-configured Drupal scaffolding and the `elastic-start-local` setup, so you don't need to run `composer create-project` from scratch.
 
 ```bash
-mkdir drupal-ai-agent && cd drupal-ai-agent
-ddev config --project-type=drupal11 --docroot=web --create-docroot
-ddev composer create-project drupal/recommended-project:^11 . --no-interaction
+git clone https://gitlab.com/ricardoamaro/labs.git
+cd labs/DrupalIberia2026/drupal-ai-agent
+```
+
+### 1.2 Configure DDEV
+
+> **Important:** Run this from inside the `drupal-ai-agent` directory, not from a parent directory. DDEV will attach to whatever directory you're in.
+
+```bash
+ddev config --project-type=drupal11 --docroot=web
 ddev start
 ```
 
-**Expected Output:**
+**Expected output:**
+
 ```text
-Creating a new DDEV project config in the current directory (... drupal-ai-agent)
-...
-Your project can be reached at: https://drupal-ai-agent.ddev.site
+Successfully started drupal-ai-agent
+Your project can be reached at http://drupal-ai-agent.ddev.site
 ```
 
-**Step 3: Verify DDEV is running correctly**
+Verify it's running:
+
 ```bash
 ddev status
+# Project name should be 'drupal-ai-agent', not a parent directory name
 ```
 
-**Expected Output:**
-```text
-drupal-ai-agent is running.
-URLs:
-http://drupal-ai-agent.ddev.site
-http://127.0.0.1:32770
+---
+
+## Section 2: Install Drupal Modules
+
+### 2.1 Set minimum stability
+
+Several AI and search modules are pre-stable. Set this once to avoid `@alpha` flags on every require:
+
+```bash
+ddev composer config minimum-stability alpha
+ddev composer config prefer-stable true
 ```
 
-### 1.2 Install Core AI and Search Modules
-
-**Step 4: Install core AI and Search modules via Composer**
-To architect an agent, you need modules for AI provider management and Elasticsearch integration. Note: Check Packagist for correct module versions, as availability may vary.
+### 2.2 Install modules via Composer
 
 ```bash
 ddev composer require \
   'drush/drush' \
-  'drupal/ai:^1.3' \
-  'drupal/elasticsearch_connector:^8.0@alpha' \
+  'drupal/ai' \
+  'drupal/ai_agents' \
+  'drupal/modeler_api' \
+  'drupal/ai_provider_litellm' \
   'drupal/search_api' \
-  'drupal/search_api_elasticsearch_client:^1.0' \
-  'elasticsearch/elasticsearch:^8.11'
+  'drupal/search_api_elasticsearch_client' \
+  'drupal/search_api_attachments' \
+  'elasticsearch/elasticsearch'
 ```
 
-**Expected Output:**
-```text
-./composer.json has been updated
-...
-Installing drupal/ai (1.3.0)
-Installing drupal/elasticsearch_connector (8.0.0-alpha6)
-```
+> **Note:** `elasticsearch/elasticsearch` is the official PHP client. `search_api_elasticsearch_client` requires it but intentionally does not bundle it so you can match your Elasticsearch version.
 
 
-
-**Step 5: Install Drupal and modules**
-
-First install Drupal with user:admin pass:admin (you can change that later).
+### 2.3 Install Drupal
 
 ```bash
 ddev drush site:install --account-name=admin --account-pass=admin --yes
 ```
 
-Install and check modules
+**Expected output:**
 
-```bash
-ddev drush pm:enable ai elasticsearch_connector search_api search_api_elasticsearch_client  --yes
-ddev drush pm:list --status=enabled | grep -E "(ai|elasticsearch)"
-```
-
-**Expected Output:**
 ```text
-  AI            AI Core (ai)                                        Enabled   1.3.0         
-  Search        Elasticsearch Connector (elasticsearch_connector)   Enabled   8.0.0-alpha6  
+You are about to DROP all tables in your 'db' database...
+Installation complete. User name: admin  User password: admin
 ```
 
-## Section 2: Elasticsearch and Context Engineering
-
-### 2.1 Start Elasticsearch with Elastic Start-Local
-
-**Step 6: Download and run the Elastic Start-Local script**
-
-Instantiate a local `elastic-start-local` to setup Elasticsearch and Kibana for local development.
+### 2.4 Enable modules
 
 ```bash
-curl -fsSL https://elastic.co/start-local | sh
+ddev drush pm:enable \
+  ai \
+  ai_search \
+  ai_provider_litellm \
+  modeler_api ai_agents ai_agents_explorer ai_agents_extra ai_agents_extra_tools \
+  ai_chatbot ai_assistant_api ai_api_explorer \
+  search_api search_api_attachments \
+  search_api_elasticsearch_client \
+  --yes
 ```
 
-**Step 7: Verify Elasticsearch is accessible**
+Verify they're active:
 
-First, source the Elasticsearch credentials from the generated `.env` file, then verify the cluster health:
+```bash
+ddev drush pm:list --status=enabled | grep -E "(ai|elasticsearch|search_api)"
+```
+
+**Expected output:**
+
+```text
+ AI         AI Core (ai)                                            Enabled
+ Search     Search API (search_api)                                 Enabled
+ Search     Search API Elasticsearch Client (search_api_...)        Enabled
+```
+
+---
+
+## Section 3: Elasticsearch Setup
+
+### 3.1 Start Elasticsearch and Kibana
+
+The `elastic-start-local` directory is already included in the repository. Before starting it, you need to make two configuration changes so Elasticsearch is reachable from inside the DDEV Docker network.
+
+**Fix 1 — Bind Elasticsearch to all interfaces (not just localhost):**
+
+```bash
+# Check current port binding
+cat elastic-start-local/docker-compose.yml | grep -A3 "ports:"
+```
+
+Edit `elastic-start-local/docker-compose.yml` and change the Elasticsearch port mapping from:
+
+```yaml
+ports:
+  - 127.0.0.1:${ES_LOCAL_PORT}:9200
+```
+
+to:
+
+```yaml
+ports:
+  - 0.0.0.0:${ES_LOCAL_PORT}:9200
+```
+
+Also add `network.host=0.0.0.0` to the Elasticsearch environment variables (under `xpack.license.self_generated.type=trial`):
+
+```yaml
+environment:
+  - discovery.type=single-node
+  - ELASTIC_PASSWORD=${ES_LOCAL_PASSWORD}
+  - xpack.security.enabled=true
+  - xpack.security.http.ssl.enabled=false
+  - xpack.license.self_generated.type=trial
+  - network.host=0.0.0.0        # ← add this
+  - xpack.ml.use_auto_machine_memory_percent=true
+```
+
+**Start Elasticsearch:**
+
+```bash
+./elastic-start-local/start.sh
+```
+
+### 3.2 Verify Elasticsearch is accessible
+
+Source the generated credentials, then check cluster health:
 
 ```bash
 source ./elastic-start-local/.env
-curl -X GET "http://localhost:9200/_cluster/health?pretty" -u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "cluster_name" : "elasticsearch",
-  "status" : "green",
-  "timed_out" : false,
-  "number_of_nodes" : 1,
-  "number_of_data_nodes" : 1,
-  "active_primary_shards" : 0,
-  "active_shards" : 0,
-  "relocating_shards" : 0,
-  "initializing_shards" : 0,
-  "unassigned_shards" : 0,
-  "delayed_unassigned_shards" : 0,
-  "number_of_pending_tasks" : 0,
-  "number_of_in_flight_fetch" : 0,
-  "task_max_waiting_in_queue_millis" : 0,
-  "active_shards_percent_as_number" : 100.0
-}
-```
-
-### 2.2 Defining Custom AI Tools
-
-**Step 10: Configure an ES|QL tool to join disparate data sources**
-Production agents often need to answer complex questions that require joining data (e.g., correlating customer records with order history). You can define an ES|QL tool via the API to allow the agent to perform these high-throughput operations directly in the cluster.
-
-Note: The following examples assume Elasticsearch connection; update the API endpoint if using a managed service.
-
-```bash
-source ./elastic-start-local/.env
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/tools" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "name": "customer_order_lookup",
-  "type": "ES|QL",
-  "description": "Finds orders for a specific customer using a lookup join.",
-  "query": "FROM orders | WHERE customer_id == ?id | ENRICH customer_data ON id"
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "tool_id": "cust_order_lookup_001",
-  "status": "registered"
-}
-```
-
-**Step 11: Verify the tool was created successfully**
-```bash
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/tools/customer_order_lookup" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "name": "customer_order_lookup",
-  "type": "ES|QL",
-  "description": "Finds orders for a specific customer using a lookup join.",
-  "query": "FROM orders | WHERE customer_id == ?id | ENRICH customer_data ON id"
-}
-```
-
-### 2.3 Architecting the Reasoning Loop
-
-**Step 12: Register a Custom Agent with a specific persona and toolset**
-An agent defines the objective and the set of tools available. By restricting tool access, you ensure the agent remains effective and secure within its specific domain (e.g., a "Technical Support Agent").
-
-```bash
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/agents" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "agent_id": "tech_support_agent",
-  "instructions": "You are a technical assistant. Use the customer_order_lookup tool to verify user details before responding.",
-  "tools": ["customer_order_lookup"]
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "tech_support_agent",
-  "status": "active"
-}
-```
-
-**Step 13: Verify the agent was registered successfully**
-```bash
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/tech_support_agent" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "tech_support_agent",
-  "instructions": "You are a technical assistant. Use the customer_order_lookup tool to verify user details before responding.",
-  "tools": ["customer_order_lookup"],
-  "status": "active"
-}
-```
-
-## Section 3: Production Interoperability and Security
-
-### 3.1 Securing the Integration
-
-**Step 14: Enforce Row-Level Security (RLS) and Tenant Isolation**
-RowLevel Security protects user data. For production deployments, use PostgreSQL which has native RLS support. For this demo with MariaDB, Drupal's built-in access control handles data isolation:
-
-```bash
-ddev drush eval "echo 'Enabling access control...'; \\
-\\$config = \\Drupal::configFactory()->getEditable('node.settings'); \\
-\\$config->set('auto_cron', 0)->save(); \\
-echo '[success] Access control enabled.';"
-```
-
-**Expected Output:**
-```text
-Enabling access control...
-[success] Access control enabled.
-```
-
-**Step 15: Verify Access Control is properly configured**
-```bash
-ddev drush eval "echo 'Checking access control...'; \\
-\\$config = \\Drupal::config('node.settings'); \\
-echo 'Access control: ' . (\\$config->get('auto_cron') === 0 ? 'ENABLED' : 'DISABLED');"
-```
-
-**Expected Output:**
-```text
-Checking access control...
-Access control: ENABLED
-```
-
-**Step 16: Test the Drupal MCP Server connection via CLI**
-Using the MCP Inspector, you can verify that external AI hosts can discover your Drupal content as "Resources" and your Drupal actions as "Tools".
-
-```bash
-npx @modelcontextprotocol/inspector ddev drush mcp:stdio
-```
-
-**Expected Output:**
-```text
-Connected to MCP Server.
-Available Tools: [create_node, update_taxonomy, clear_cache]
-Available Resources: [node_list, user_permissions]
-```
-
-**Step 17: Verify MCP Server is properly configured**
-```bash
-ddev drush eval "echo 'MCP Server status...'; \
-\$config = \Drupal::config('mcp_server.settings'); \
-echo 'MCP Server enabled: ' . (\$config->get('enabled') ? 'Yes' : 'No');"
-```
-
-**Expected Output:**
-```text
-MCP Server status...
-MCP Server enabled: Yes
-```
-
-**Step 18: Verify Hybrid Search performance**
-Hybrid search combines keyword and semantic search for better results:
-
-```bash
-ddev drush ai:search-test "GDPR compliance" --index=my_elastic_index
-```
-
-**Expected Output:**
-```text
-Hybrid Search Results:
-1. Article: "GDPR Data Retention Policy" (Score: 0.98) - [Semantic Match]
-2. Form: "User Consent (GDPR-101)" (Score: 0.85) - [Exact Match]
-```
-
-**Step 19: Verify Elasticsearch connector is properly configured**
-```bash
-ddev drush eval "echo 'Elasticsearch connector status...'; \
-\$config = \Drupal::config('elasticsearch_connector.server.default'); \
-echo 'Server URL: ' . \$config->get('url'); \
-echo 'Server Status: ' . (\$config->get('status') ? 'Enabled' : 'Disabled');"
-```
-
-**Expected Output:**
-```text
-Elasticsearch connector status...
-Server URL: http://localhost:9200
-Server Status: Enabled
-```
-
-## Section 4: Building Your First AI Agent
-
-### 4.1 Define a Custom Search Tool
-
-**Step 20: Create an ES|QL tool for customer data lookup**
-```bash
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/tools" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "name": "content_lookup",
-  "type": "ES|QL",
-  "description": "Finds Drupal content by title or keywords.",
-  "query": "FROM drupal_content | WHERE title CONTAINS ?query OR body CONTAINS ?query"
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "tool_id": "content_lookup_001",
-  "status": "registered"
-}
-```
-
-**Step 21: Verify the content lookup tool was created**
-```bash
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/tools/content_lookup" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "name": "content_lookup",
-  "type": "ES|QL",
-  "description": "Finds Drupal content by title or keywords.",
-  "query": "FROM drupal_content | WHERE title CONTAINS ?query OR body CONTAINS ?query"
-}
-```
-
-### 4.2 Register Your AI Agent
-
-**Step 22: Create a custom agent with specific instructions**
-```bash
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/agents" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "agent_id": "drupal_support_agent",
-  "instructions": "You are a Drupal content assistant. Use the content_lookup tool to find relevant articles and provide helpful summaries.",
-  "tools": ["content_lookup"]
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "drupal_support_agent",
-  "status": "active"
-}
-```
-
-**Step 23: Verify the agent was registered successfully**
-```bash
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "drupal_support_agent",
-  "instructions": "You are a Drupal content assistant. Use the content_lookup tool to find relevant articles and provide helpful summaries.",
-  "tools": ["content_lookup"],
-  "status": "active"
-}
-```
-
-### 4.3 Create Content for Testing
-
-**Step 24: Add sample content to test the AI agent**
-```bash
-ddev drush entity:create node article --validate=0
-```
-
-**Expected Output:**
-```text
-Create a node entity by entering values for the following fields:
-title: GDPR Compliance Guide
-body: This guide explains GDPR requirements for data protection and privacy.
-Node created with ID: 1
-```
-
-**Step 25: Verify the content was created successfully**
-```bash
-ddev drush entity:load node 1
-```
-
-**Expected Output:**
-```text
- +--------+-------------------+
- | ID     | 1                 |
- | Title  | GDPR Compliance   |
- |        | Guide             |
- | Status | Published         |
- +--------+-------------------+
-```
-
-## Section 5: Testing Your AI Agent
-
-### 5.1 Test the Agent Connection
-
-**Step 26: Verify the agent is accessible via MCP**
-```bash
-npx @modelcontextprotocol/inspector http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent
-```
-
-**Expected Output:**
-```text
-Connected to MCP Server.
-Available Tools: [content_lookup]
-Agent Instructions: You are a Drupal content assistant...
-```
-
-**Step 27: Verify agent configuration is correct**
-```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "drupal_support_agent",
-  "instructions": "You are a Drupal content assistant. Use the content_lookup tool to find relevant articles and provide helpful summaries.",
-  "tools": ["content_lookup"],
-  "status": "active"
-}
-```
-
-### 5.2 Test Content Search
-
-**Step 28: Use the agent to find GDPR-related content**
-```bash
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent/execute" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "query": "What are GDPR requirements?",
-  "tools": ["content_lookup"]
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "response": "I found an article about GDPR Compliance Guide. Here's a summary: This guide explains GDPR requirements for data protection and privacy.",
-  "source": "content_lookup_001"
-}
-```
-
-**Step 29: Test agent with different queries**
-```bash
-curl -X POST "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent/execute" \
--H 'Content-Type: application/json' \
--u "elastic:${ES_LOCAL_PASSWORD}" \
--d '{
-  "query": "How to configure Elasticsearch in Drupal?",
-  "tools": ["content_lookup"]
-}'
-```
-
-**Expected Output:**
-```json
-{
-  "response": "I found an article about Elasticsearch configuration. Here's a summary: Configure the Elasticsearch connector module with your server URL and test the connection.",
-  "source": "content_lookup_001"
-}
-```
-
-## Section 6: Adding Security Features
-
-### 6.1 Enable Row-Level Security
-
-**Step 30: Verify data access control**
-```bash
-ddev drush eval "echo 'Checking data access...'; \\
-\\$result = \\Drupal::database()->query('SELECT COUNT(*) as count FROM {node_field_data}'); \\
-foreach (\\$result as \\$row) { echo 'Accessible nodes: ' . \\$row->count; }"
-```
-
-**Expected Output:**
-```text
-Checking data access...
-Accessible nodes: 1
-```
-
-**Step 31: Verify different user contexts**
-```bash
-ddev drush eval "echo 'Testing access by user...'; \\
-\\$current_user = \\Drupal::currentUser(); \\
-echo 'Current user ID: ' . \\$current_user->id();"
-```
-
-**Expected Output:**
-```text
-Testing access by user...
-Current user ID: 1
-```
-
-### 6.2 Test Security Implementation
-
-**Step 32: Verify security is working correctly**
-```bash
-ddev drush eval "echo 'Testing RLS...'; \
-\$query = \Drupal::database()->query('SELECT COUNT(*) FROM {node_field_data} WHERE uid = 1');"
-```
-
-**Expected Output:**
-```text
-Testing RLS...
-[success] Query executed successfully.
-```
-
-**Step 33: Test RLS with different user contexts**
-```bash
-ddev drush eval "echo 'Testing RLS with user context...'; \
-\$current_user = \Drupal::currentUser(); \
-echo 'Current user ID: ' . \$current_user->id(); \
-\$result = \Drupal::database()->query('SELECT COUNT(*) as count FROM {node_field_data} WHERE uid = :uid', [':uid' => \$current_user->id()]); \
-foreach (\$result as \$row) { echo 'Visible nodes for user: ' . \$row->count; }"
-```
-
-**Expected Output:**
-```text
-Testing RLS with user context...
-Current user ID: 1
-Visible nodes for user: 5
-```
-
-## Section 7: Advanced Features
-
-### 7.1 Implement Hybrid Search
-
-**Step 34: Test hybrid search combining keyword and semantic search**
-```bash
-ddev drush ai:search-test "data protection" --index=my_elastic_index
-```
-
-**Expected Output:**
-```text
-Hybrid Search Results:
-1. Article: "GDPR Compliance Guide" (Score: 0.95) - [Semantic Match]
-2. Form: "Privacy Policy (GDPR-101)" (Score: 0.88) - [Exact Match]
-```
-
-**Step 35: Verify hybrid search configuration**
-```bash
-ddev drush eval "echo 'Hybrid search configuration...'; \\
-\\$config = \\Drupal::config('search_api.index.my_elastic_index'); \\
-echo 'Index status: ' . (\\$config->get('status') ? 'Enabled' : 'Disabled'); \\
-echo 'Server: ' . \\$config->get('server');"
-```
-
-**Expected Output:**
-```text
-Hybrid search configuration...
-Index status: Enabled
-Server: elasticsearch_server
-```
-
-### 7.2 Monitor Agent Performance
-
-**Step 36: Check agent usage and performance metrics**
-```bash
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent/stats" \
--u "elastic:${ES_LOCAL_PASSWORD}"
-```
-
-**Expected Output:**
-```json
-{
-  "agent_id": "drupal_support_agent",
-  "total_queries": 15,
-  "average_response_time": 0.24,
-  "success_rate": 0.98
-}
-```
-
-**Step 37: Monitor Elasticsearch cluster health**
-```bash
 curl -X GET "http://localhost:9200/_cluster/health?pretty" \
--u "elastic:${ES_LOCAL_PASSWORD}"
+  -u "elastic:${ES_LOCAL_PASSWORD}"
 ```
 
-**Expected Output:**
+**Expected output:**
+
 ```json
 {
   "cluster_name" : "docker-cluster",
   "status" : "green",
   "timed_out" : false,
-  "number_of_nodes" : 1,
-  "number_of_data_nodes" : 1,
-  "active_primary_shards" : 0,
-  "active_shards" : 0,
-  "relocating_shards" : 0,
-  "initializing_shards" : 0,
-  "unassigned_shards" : 0,
-  "delayed_unassigned_shards" : 0,
-  "number_of_pending_tasks" : 0,
-  "number_of_in_flight_fetch" : 0,
-  "task_max_waiting_in_queue_millis" : 0,
-  "active_shards_percent_as_number" : 100.0
+  "number_of_nodes" : 1
 }
 ```
 
-### 7.3 Elastic Start-Local Service Management
+### 3.3 Find the Docker Bridge IP (Linux only)
 
-**Step 38: Start Elasticsearch and Kibana**
+On Linux, DDEV containers cannot reach `localhost` on the host using `host.docker.internal`. You need the Docker bridge gateway IP instead:
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-./start.sh
+docker network inspect ddev-drupal-ai-agent_default | grep Gateway
+# Typically returns 172.x.x.1 or 192.168.x.1
 ```
 
-**Expected Output:**
-```text
-🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!
+Or from inside DDEV:
 
-🌐 Open your browser at http://localhost:5601
-Elasticsearch is running on http://localhost:9200
-```
-
-**Step 39: Stop Elasticsearch and Kibana**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-./stop.sh
+ddev exec ip route | grep default | awk '{print $3}'
 ```
 
-**Expected Output:**
-```text
-[+] Running 3/3
- ✔ Container kibana-local-dev Stopped
- ✔ Container es-local-dev Stopped
-```
+Save this IP — you'll use it as the Elasticsearch URL in Drupal's configuration. For example: `http://172.20.0.1:9200`
 
-**Step 40: Check service status**
+**Verify connectivity from inside DDEV:**
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-docker compose ps
+source elastic-start-local/.env
+ES_PASS=${ES_LOCAL_PASSWORD}
+HOST_IP=$(docker network inspect ddev-drupal-ai-agent_default | jq -r '.[0].IPAM.Config[0].Gateway')
+cd drupal-ai-agent
+ddev exec curl -s "http://${HOST_IP}:9200/_cluster/health" -u "elastic:${ES_PASS}"
 ```
 
-**Expected Output:**
-```text
-CONTAINER ID   IMAGE                    STATUS       NAMES
-[running containers list]
-```
+> **macOS/Windows users:** `host.docker.internal` works automatically. Use `http://host.docker.internal:9200` instead.
 
-**Step 41: View service logs**
+---
+
+## Section 4: Configure Elasticsearch AI (ELSER)
+
+ELSER (Elastic Learned Sparse EncodeR) is Elasticsearch's built-in semantic search model. It enables understanding of intent and context — not just keyword matching.
+
+> **Requirements:** Elasticsearch 8.11+ (your `elastic-start-local` version should meet this).
+
+### 4.1 Deploy the ELSER model
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-docker compose logs
+source ./elastic-start-local/.env
+
+curl -X PUT "http://localhost:9200/_inference/sparse_embedding/elser-model" \
+  -H 'Content-Type: application/json' \
+  -u "elastic:${ES_LOCAL_PASSWORD}" \
+  -d '{
+    "service": "elasticsearch",
+    "service_settings": {
+      "num_allocations": 1,
+      "num_threads": 1,
+      "model_id": ".elser_model_2_linux-x86_64"
+    }
+  }'
 ```
 
-**Expected Output:**
-```text
-es-local-dev  | [2024-01-15T10:30:00.000Z] INFO: starting elasticsearch...
-kibana-local-dev | [2024-01-15T10:30:06.000Z] INFO: starting kibana...
-```
+**Expected output:**
 
-**Step 42: Restart services with clean state**
-```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-./stop.sh
-./start.sh
-```
-
-**Expected Output:**
-```text
-Stopping services...
-Starting Elasticsearch and Kibana...
-🎉 Congrats, Elasticsearch and Kibana are installed and running in Docker!
-```
-
-## Section 8: Troubleshooting Common Issues
-
-### 8.1 Connection Problems
-
-**Step 43: Check if Elasticsearch is accessible**
-```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -f http://localhost:9200/_cluster/health -u "elastic:${ES_LOCAL_PASSWORD}" || echo "Elasticsearch not reachable"
-```
-
-**Expected Output:**
-```text
+```json
 {
-  "cluster_name" : "elasticsearch",
-  "status" : "green",
-  "timed_out" : false,
-  "number_of_nodes" : 1,
-  "number_of_data_nodes" : 1,
-  "active_primary_shards" : 0,
-  "active_shards" : 0,
-  "relocating_shards" : 0,
-  "initializing_shards" : 0,
-  "unassigned_shards" : 0,
-  "delayed_unassigned_shards" : 0,
-  "number_of_pending_tasks" : 0,
-  "number_of_in_flight_fetch" : 0,
-  "task_max_waiting_in_queue_millis" : 0,
-  "active_shards_percent_as_number" : 100.0
+  "inference_id": "elser-model",
+  "task_type": "sparse_embedding",
+  "service": "elasticsearch"
 }
 ```
 
-**Step 44: Check if ports are in use**
+> **Note:** The first time you deploy ELSER, Elasticsearch downloads the model (~500MB). This can take several minutes. Check download progress:
+
 ```bash
-netstat -tulpn 2>/dev/null | grep -E ':(9200|5601)\s' || echo "Ports available"
+curl "http://localhost:9200/_ml/trained_models/.elser_model_2_linux-x86_64/_stats" \
+  -u "elastic:${ES_LOCAL_PASSWORD}" | python3 -m json.tool | grep -A3 "deployment_stats"
 ```
 
-**Expected Output:**
-```text
-tcp6 0 0 :::9200 :::* LISTEN 1234/java
-tcp6 0 0 :::5601 :::* LISTEN 5678/node
-```
+### 4.2 Verify the ELSER model is ready
 
-**Step 45: Check if services are running**
 ```bash
-ps aux | grep -E "(elasticsearch|kibana)"
+curl "http://localhost:9200/_inference/sparse_embedding/elser-model" \
+  -u "elastic:${ES_LOCAL_PASSWORD}"
 ```
 
-**Expected Output:**
+**Expected output:**
+
+```json
+{
+  "endpoints": [{
+    "inference_id": "elser-model",
+    "task_type": "sparse_embedding",
+    "service": "elasticsearch",
+    "service_settings": {
+      "num_allocations": 1,
+      "num_threads": 1,
+      "model_id": ".elser_model_2_linux-x86_64"
+    }
+  }]
+}
+```
+
+### 4.3 Test ELSER with a semantic query
+
+```bash
+curl -X POST "http://localhost:9200/_inference/sparse_embedding/elser-model" \
+  -H 'Content-Type: application/json' \
+  -u "elastic:${ES_LOCAL_PASSWORD}" \
+  -d '{"input": "GDPR data protection requirements"}'
+```
+
+A successful response returns a sparse vector of weighted terms — this is what ELSER uses for semantic matching.
+
+---
+
+## Section 5: Connect Drupal to Elasticsearch
+
+### 5.1 Configure the Search API server
+
+Open the Drupal admin interface:
+
+```bash
+ddev launch
+# Opens http://drupal-ai-agent.ddev.site in your browser
+# Login: admin / admin
+```
+
+Navigate to **Administration → Configuration → Search and Metadata → Search API** (`/admin/config/search/search-api`).
+
+Click **Add server** and configure:
+
+| Field | Value |
+|---|---|
+| Server name | `Elasticsearch` |
+| Backend | `Elasticsearch Client` |
+| Elasticsearch URL | `http://172.x.x.1:9200` *(use your Docker bridge IP from Section 2.3)* |
+| Authentication | Basic auth |
+| Username | `elastic` |
+| Password | *(from `elastic-start-local/.env`)* |
+
+Click **Save** — you should see a green "The Elasticsearch server could be reached" confirmation.
+
+Alternatively, configure via Drush:
+
+```bash
+# Get your bridge IP and password
+ddev drush eval "
+\$config = \Drupal::configFactory()->getEditable('search_api.server.elasticsearch');
+\$config->set('backend', 'elasticsearch_client');
+\$config->set('backend_config.connector', 'standard');
+\$config->set('backend_config.connector_config.url', 'http://${HOST_IP}:9200');
+\$config->save();
+echo 'Server configured.';
+"
+```
+
+### 5.2 Create a Search API index
+
+Navigate to **Search API → Add index**:
+
+| Field | Value |
+|---|---|
+| Index name | `Drupal Content` |
+| Data sources | `Content` |
+| Server | `Elasticsearch` (created above) |
+
+Add fields to index (under **Fields** tab):
+
+- `Title` → type: Fulltext
+- `Body` → type: Fulltext
+- `Content type` → type: String
+- `Published` → type: Boolean
+
+Enable the **ELSER Semantic Search** processor if available, or configure it under **Processors**.
+
+Save and then **Index all items** to push existing content to Elasticsearch.
+
+---
+
+## Section 6: Create and Search Content
+
+### 6.1 Create sample content
+
+Via the browser at `/node/add/article`.
+
+Create several articles on different topics so search results are meaningful.
+
+### 6.2 Index content
+
+```bash
+ddev drush search-api:index
+```
+
+**Expected output:**
+
 ```text
-elasticsearch 1234  0.0  5.2 1234567 89012 ?  Ssl  10:30   0:15 /usr/share/elasticsearch/jdk/bin/java ...
-kibana        5678  0.0  2.1  987654 43210 ?  Ssl  10:30   0:08 /usr/share/kibana/bin/../node/bin/node ...
+Indexed 3 items from index Drupal Content.
 ```
 
-### 8.2 MCP Server Connectivity
+### 6.3 Run a hybrid search (keyword + semantic)
 
-**Step 46: Test MCP Server connection**
+Test the search index directly via Elasticsearch to verify ELSER is working:
+
+```bash
+source ./elastic-start-local/.env
+
+curl -X POST "http://localhost:9200/drupal_content/_search" \
+  -H 'Content-Type: application/json' \
+  -u "elastic:${ES_LOCAL_PASSWORD}" \
+  -d '{
+    "query": {
+      "sparse_vector": {
+        "field": "body_vector",
+        "inference_id": "elser-model",
+        "query": "What are the requirements for data privacy compliance?"
+      }
+    }
+  }'
+```
+
+The semantic search understands that "data privacy compliance" relates to GDPR content even without exact keyword matches.
+
+---
+
+## Section 7: MCP Server Integration (Optional / Advanced)
+
+The `drupal/mcp_server` module enables external AI assistants (Claude, Cursor, etc.) to interact with your Drupal content via the Model Context Protocol.
+
+> **Current status:** This module is very early-stage and its Composer dependency chain has a known bug (`drupal/simple_oauth_21` does not exist). Install manually until fixed upstream:
+
+```bash
+# Install dependencies that do resolve correctly
+ddev composer require \
+  'drupal/simple_oauth:^6' \
+  'e0ipso/simple_oauth_21:^1@dev' \
+  'drupal/tool:^1.0@alpha' \
+  'mcp/sdk:^0.4'
+
+# Clone the module directly (bypasses the broken Composer release)
+git clone https://git.drupalcode.org/project/mcp_server.git \
+  web/modules/contrib/mcp_server
+
+# Enable it
+ddev drush pm:enable mcp_server --yes
+```
+
+**Test the MCP connection:**
+
 ```bash
 npx @modelcontextprotocol/inspector ddev drush mcp:stdio
 ```
 
-**Expected Output:**
+**Expected output:**
+
 ```text
 Connected to MCP Server.
 Available Tools: [create_node, update_taxonomy, clear_cache]
 Available Resources: [node_list, user_permissions]
 ```
 
-**Step 47: Verify MCP Server is listening**
+---
+
+## Section 8: drupal/ai Module Configuration
+
+The `drupal/ai` module provides a unified interface for integrating external LLM providers (OpenAI, Anthropic, Ollama, etc.) with Drupal.
+
+### 8.1 Configure an AI provider
+
+Navigate to **Administration → Configuration → AI → AI Providers** (`/admin/config/ai/providers`).
+
+Add your preferred provider:
+
+| Provider | Requirements |
+|---|---|
+| OpenAI | API key from platform.openai.com |
+| Anthropic | API key from console.anthropic.com |
+| Ollama | Local Ollama instance running on host |
+
+For Ollama (fully local, no API key needed):
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_mcp/health" -u "elastic:${ES_LOCAL_PASSWORD}" 2>/dev/null || echo "MCP Server not accessible"
+# Install Ollama on your host machine first
+# https://ollama.com
+
+# Pull a model
+ollama pull llama3.2
+
+# The Ollama API runs on localhost:11434
+# From DDEV, use the Docker bridge IP: http://172.x.x.1:11434
 ```
 
-**Expected Output:**
+Configure in Drupal at `/admin/config/ai/providers` → Add provider → Ollama → URL: `http://YOUR_BRIDGE_IP:11434`
+
+### 8.2 Test AI integration
+
+```bash
+ddev drush eval "
+\$ai = \Drupal::service('ai.provider');
+\$response = \$ai->chat('What is Drupal?', [], 'default');
+echo \$response->getNormalized();
+"
+```
+
+---
+
+## Section 9: Access Control and Security
+
+Drupal's built-in node access system handles content-level security. Any search results returned by Elasticsearch are filtered through Drupal's access layer before display.
+
+### 9.1 Verify access control is active
+
+```bash
+ddev drush eval "
+\$node_access = \Drupal::moduleHandler()->moduleExists('node');
+echo 'Node access: ' . (\$node_access ? 'Active' : 'Inactive');
+\$count = \Drupal::database()->query('SELECT COUNT(*) FROM {node_field_data}')->fetchField();
+echo PHP_EOL . 'Indexed nodes: ' . \$count;
+"
+```
+
+**Expected output:**
+
 ```text
-{"status":"ok","version":"1.0.0"}
+Node access: Active
+Indexed nodes: 3
 ```
 
-### 8.3 Agent Registration Issues
+### 9.2 Verify per-user content visibility
 
-**Step 48: Check agent status and registration**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent/status" \
--u "elastic:${ES_LOCAL_PASSWORD}"
+ddev drush eval "
+\$current_user = \Drupal::currentUser();
+echo 'Running as user ID: ' . \$current_user->id() . PHP_EOL;
+\$result = \Drupal::database()->query(
+  'SELECT COUNT(*) as count FROM {node_field_data} WHERE uid = :uid',
+  [':uid' => \$current_user->id()]
+)->fetchObject();
+echo 'Nodes owned by this user: ' . \$result->count;
+"
 ```
 
-**Expected Output:**
-```json
-{
-  "agent_id": "drupal_support_agent",
-  "status": "active",
-  "last_active": "2024-01-15T10:30:00Z"
-}
-```
+---
 
-**Step 49: List all registered agents**
+## Section 10: Monitoring
+
+### 10.1 Elasticsearch cluster health
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents" \
--u "elastic:${ES_LOCAL_PASSWORD}"
+source ./elastic-start-local/.env
+curl "http://localhost:9200/_cluster/health?pretty" \
+  -u "elastic:${ES_LOCAL_PASSWORD}"
 ```
 
-**Expected Output:**
-```json
-{
-  "agents": [
-    {
-      "agent_id": "drupal_support_agent",
-      "status": "active"
-    },
-    {
-      "agent_id": "tech_support_agent", 
-      "status": "active"
-    }
-  ]
-}
-```
+### 10.2 ELSER model status
 
-**Step 50: Check agent logs for errors**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_plugins/_agent_builder/agents/drupal_support_agent/logs" \
--u "elastic:${ES_LOCAL_PASSWORD}"
+curl "http://localhost:9200/_ml/trained_models/.elser_model_2_linux-x86_64/_stats" \
+  -u "elastic:${ES_LOCAL_PASSWORD}" \
+  | python3 -m json.tool | grep -E "(state|allocation_count)"
 ```
 
-**Expected Output:**
-```json
-{
-  "logs": [
-    {
-      "timestamp": "2024-01-15T10:30:00Z",
-      "level": "INFO",
-      "message": "Agent registered successfully"
-    }
-  ]
-}
-```
+### 10.3 Search index stats
 
-### 8.4 Elastic Start-Local Service Issues
-
-**Step 51: Check if Elasticsearch and Kibana are running**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-docker compose ps --status running
+curl "http://localhost:9200/drupal_content/_stats" \
+  -u "elastic:${ES_LOCAL_PASSWORD}" \
+  | python3 -m json.tool | grep -E "(doc_count|store_size)"
 ```
 
-**Expected Output:**
-```text
-CONTAINER ID   IMAGE                    STATUS       NAMES
-[container list]
-```
+### 10.4 Set Drupal logging level
 
-**Step 52: Restart services if needed**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-./stop.sh
-./start.sh
+ddev drush config:set system.logging error_level verbose -y
 ```
 
-**Expected Output:**
-```text
-Stopping services...
-Starting Elasticsearch and Kibana...
-🎉 Successfully running
-```
+### 10.5 Drupal site Agent with knowledge of all your documents
 
-**Step 53: View service logs for debugging**
+A chatbot on your Drupal site that answers questions using your content, powered by an LLM + ELSER semantic search against Elasticsearch.
+
+
+**Step 1 — Install the OpenAI provider module:**
+
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-docker compose logs -f
+ddev composer require 'drupal/ai_provider_openai'
+ddev drush pm:enable ai_provider_openai --yes
 ```
 
-**Expected Output:**
-```text
-es-local-dev  | [startup logs...]
-kibana-local-dev | [startup logs...]
-```
+**Step 2 — Store your API key securely using the Key module:**
 
-**Step 54: Clean up and restart from scratch**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-./stop.sh
-./start.sh
+ddev composer require 'drupal/key'
+ddev drush pm:enable key --yes
 ```
 
-**Expected Output:**
-```text
-Stopping services...
-Starting services...
-✅ All services started successfully
-```
+Go to `/admin/config/system/keys/add`:
 
-**Step 55: Check for common port conflicts**
+| Field | Value |
+|---|---|
+| Key name | `openai_api_key` |
+| Key type | `Authentication` |
+| Key provider | `Configuration` |
+| Key value | `sk-...` *(your OpenAI API key)* |
+
+**Step 3 — Configure the OpenAI provider:**
+
+Go to `/admin/config/ai/providers` → **OpenAI** → select your key → Save.
+
+Test it immediately:
+
 ```bash
-netstat -tulpn 2>/dev/null | grep -E ':(9200|5601)\s' || echo "Ports 9200 and 5601 are available"
+ddev drush pm:enable ai_api_explorer --yes
+ddev launch /admin/config/ai/explorer
 ```
 
-**Expected Output:**
-```text
-COMMAND  PID     USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-java    1234 elasticsearch  254u  IPv6  12345      0t0  TCP *:9200 (LISTEN)
+Type a prompt — if you get a response, the LLM connection works.
 
-COMMAND  PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
-node    5678 kibana  25u  IPv6  67890      0t0  TCP *:5601 (LISTEN)
-```
+---
 
-## Section 9: Next Steps and Best Practices
+**Step 4 — Enable the chatbot:**
 
-### 9.1 Scaling Your Agent
-
-**Step 56: Consider production deployment options**
 ```bash
-echo "For production, consider using managed Elasticsearch services like AWS OpenSearch or Elastic Cloud"
+ddev drush pm:enable ai_chatbot --yes
+ddev drush cr
 ```
 
-**Expected Output:**
-```text
-For production, consider using managed Elasticsearch services like AWS OpenSearch or Elastic Cloud
-```
+Go to `/admin/config/ai/chatbot` and configure:
 
-**Step 57: Plan for high availability**
+| Field | Value |
+|---|---|
+| LLM provider | OpenAI |
+| Model | `gpt-5-mini` (cheap) or `gpt-5` |
+| System prompt | `You are a helpful assistant. Answer questions using the provided Drupal content.` |
+
+**Step 5 — Connect it to your Elasticsearch search index:**
+
 ```bash
-echo "Consider implementing:"
-echo "1. Multiple Elasticsearch nodes for redundancy"
-echo "2. Load balancers for agent requests"
-echo "3. Database replication for content"
-echo "4. Caching layers for performance"
+ddev drush pm:enable ai_search --yes
 ```
 
-**Expected Output:**
-```text
-Consider implementing:
-1. Multiple Elasticsearch nodes for redundancy
-2. Load balancers for agent requests
-3. Database replication for content
-4. Caching layers for performance
+Go to `/admin/config/ai/search` and point it at your `drupal_content` Search API index. This makes the chatbot retrieve relevant content from Elasticsearch before sending it to the LLM — this is the RAG (Retrieval Augmented Generation) pattern.
+
+**The flow will be:**
+```
+User question
+  → ai_search queries drupal_content index via ELSER (semantic search)
+  → top results passed as context to OpenAI
+  → OpenAI answers using your Drupal content
+  → response shown in chatbot
 ```
 
-### 9.2 Monitoring and Logging
 
-**Step 58: Set up monitoring for your agent**
+
+
+### 10.6 Kibana Agent Builder in Elastic
+
+The Kibana Agent Builder in Elastic 9.x lets you build conversational AI agents that can query your Elasticsearch data. Here's what's actually possible with your current setup:
+
+**Query your indexed Drupal content** — ask natural language questions that get translated into ES|QL or search queries against your `drupal_content` index:
+- "Find articles about GDPR compliance"
+- "What content do we have about data privacy?"
+- "Summarize our most recent articles"
+
+**Use ES|QL tools** — you can give the agent pre-built queries as tools it can invoke:
+```
+FROM drupal_content | WHERE title LIKE "*GDPR*" | KEEP title, body
+```
+
+**Hybrid search** — combine keyword and ELSER semantic search so the agent finds relevant content even without exact keyword matches.
+
+**What it can't do** without extra work:
+
+- It can't write back to Drupal (read-only against Elasticsearch)
+- It can't access content not indexed into Elasticsearch
+- It has no knowledge of Drupal's access control — that lives in Drupal, not ES
+
+**The more interesting integration is actually the reverse** — using `drupal/ai` + an LLM provider to build agents *inside Drupal* that use Elasticsearch as their knowledge base. That gives you:
+
+- Drupal-native access control on results
+- Content creation/editing via AI Automators
+- AI chatbot on your site via `ai_chatbot`
+
+
+
+
+## Section 11: Service Management
+
+### Start all services
+
 ```bash
-ddev drush config:set system.logging error_level warning -y
+# Start Elasticsearch + Kibana
+./elastic-start-local/start.sh
+
+# Start Drupal
+cd drupal-ai-agent
+ddev start
 ```
 
-**Expected Output:**
-```text
-system.logging has been updated.
-```
+### Stop all services
 
-**Step 59: Configure log rotation**
 ```bash
-ddev drush eval "echo 'Configuring log rotation...'; \\
-\\$config = \\Drupal::configFactory()->getEditable('system.logging'); \\
-\\$config->set('error_level', 'verbose'); \\
-\\$config->save(); \\
-echo 'Log level set to verbose for detailed monitoring';"
-```
-
-**Expected Output:**
-```text
-Configuring log rotation...
-Log level set to verbose for detailed monitoring
-```
-
-**Step 60: Set up performance monitoring**
-```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
-source .env
-curl -X GET "http://localhost:9200/_nodes/stats" -u "elastic:${ES_LOCAL_PASSWORD}" | jq '.nodes | to_entries[] | {name: .key, stats: .value.jvm.mem.heap_used_percent}'
-```
-
-**Expected Output:**
-```json
-{
-  "name": "node-1",
-  "stats": 45.2
-}
-```
-
-### 9.3 Documentation and Maintenance
-
-**Step 61: Keep your system updated**
-```bash
-ddev composer update drupal/ai drupal/elasticsearch_connector
-```
-
-**Expected Output:**
-```text
-Loading composer repositories with package information
-Updating dependencies
-  - Updating drupal/ai (1.3.0 => 1.4.0)
-  - Updating drupal/elasticsearch_connector (8.0.0-alpha6 => 8.1.0)
-  - Updating drupal/key (1.22.0 => 1.23.0)
-  - Updating drupal/search_api (1.40.0 => 1.41.0)
-Writing lock file
-Generating autoload files
-```
-
-**Step 62: Document your agent configuration**
-```bash
-echo "Create documentation for:"
-echo "1. Agent configuration and tools"
-echo "2. Security policies and RLS rules"
-echo "3. Performance tuning parameters"
-echo "4. Troubleshooting procedures"
-echo "5. Backup and recovery processes"
-```
-
-**Expected Output:**
-```text
-Create documentation for:
-1. Agent configuration and tools
-2. Security policies and RLS rules
-3. Performance tuning parameters
-4. Troubleshooting procedures
-5. Backup and recovery processes
-```
-
-**Step 63: Set up automated backups**
-```bash
-echo "Implement automated backups for:"
-echo "1. Drupal database"
-echo "2. Elasticsearch indices"
-echo "3. Agent configurations"
-echo "4. Security policies"
-```
-
-**Expected Output:**
-```text
-Implement automated backups for:
-1. Drupal database
-2. Elasticsearch indices
-3. Agent configurations
-4. Security policies
-```
-
-## Conclusion
-
-Congratulations! You've successfully built a production-grade AI agent using Drupal and Elasticsearch. This system can now intelligently search and retrieve information from your Drupal content, providing context-aware responses to user queries.
-
-### Key Features Implemented
-
-1. **Prerequisites and Environment Setup**: Comprehensive installation and verification steps
-2. **Elasticsearch Integration**: Proper setup with Elastic Start-Local
-3. **Custom AI Tools**: ES|QL tools for data querying and analysis
-4. **Agent Registration**: Custom agents with specific instructions and tool access
-5. **Security Features**: Row-Level Security and tenant isolation
-6. **MCP Server Integration**: Model Context Protocol for external AI integration
-7. **Hybrid Search**: Combining keyword and semantic search capabilities
-8. **Monitoring and Troubleshooting**: Comprehensive monitoring and debugging tools
-
-### Best Practices Followed
-
-- **Always verify your work before considering it complete**
-- **Use plan mode for complex tasks**
-- **Document your lessons learned**
-- **Challenge your own work for elegance and simplicity**
-
-### Next Steps
-
-1. **Test thoroughly** in a staging environment before production deployment
-2. **Monitor performance** and adjust configurations as needed
-3. **Implement security audits** regularly to ensure data protection
-4. **Scale incrementally** based on usage patterns and requirements
-5. **Keep documentation updated** as the system evolves
-
-Your AI agent is now ready to help users find information quickly and accurately using your Drupal content repository!
-
-## Additional Resources
-
-- [Drupal AI Module Documentation](https://www.drupal.org/project/ai)
-- [Elasticsearch Connector Documentation](https://www.drupal.org/project/elasticsearch_connector)
-- [MCP Server Documentation](https://www.drupal.org/project/mcp_server)
-- [Elastic Start-Local Documentation](https://github.com/elastic/start-local)
-- [DDEV Documentation](https://ddev.readthedocs.io/)
-
-## Troubleshooting Quick Reference
-
-| Issue | Solution |
-|-------|----------|
-| Elasticsearch not starting | Check ports 9200/5601, verify Docker is running |
-| Agent not responding | Verify agent status, check Elasticsearch health |
-| RLS not working | Ensure access control is configured |  
-| Search not returning results | Check index configuration, verify content is indexed |
-| Performance issues | Monitor resource usage, restart services if needed |
-
-Remember: This demo uses MariaDB and elastic-start-local. For production deployments, use PostgreSQL with native RLS and managed Elasticsearch services.
-
-## Appendix: Deprovisioning and Cleanup
-
-When you're finished with the tutorial or want to free up system resources, follow these steps to completely remove all provisioned services and containers.
-
-### A.1 Stop and Delete DDEV Project
-
-**Step 1: Navigate to the DDEV project directory**
-```bash
-cd ~/repos/labs/DrupalIberia2026/drupal-ai-agent
-```
-
-**Step 2: Stop the DDEV project**
-```bash
+./elastic-start-local/stop.sh
 ddev stop
 ```
 
-**Expected Output:**
-```text
-Project drupal-ai-agent has been stopped.
+### View logs
+
+```bash
+# Elasticsearch logs
+cd elastic-start-local && docker compose logs -f elasticsearch
+
+# Drupal/PHP logs
+ddev logs
 ```
 
-**Step 3: Delete the DDEV project**
+### Restart from clean state
+
 ```bash
+./elastic-start-local/stop.sh && ./elastic-start-local/start.sh
+ddev restart
+```
+
+---
+
+## Troubleshooting
+
+### Composer stability errors
+
+If you see `minimum-stability` errors when adding new modules:
+
+```bash
+ddev composer config minimum-stability alpha
+ddev composer config prefer-stable true
+```
+
+### Elasticsearch not reachable from DDEV (Linux)
+
+`host.docker.internal` is not automatic on Linux. Get the bridge IP:
+
+```bash
+ddev exec ip route | grep default | awk '{print $3}'
+```
+
+Use that IP (e.g. `172.20.0.1`) as the Elasticsearch host in all Drupal configuration.
+
+### Elasticsearch bound to localhost only
+
+If `curl http://BRIDGE_IP:9200` fails from the host, the port binding needs fixing:
+
+1. Edit `elastic-start-local/docker-compose.yml`
+2. Change `127.0.0.1:${ES_LOCAL_PORT}:9200` → `0.0.0.0:${ES_LOCAL_PORT}:9200`
+3. Add `- network.host=0.0.0.0` to the Elasticsearch environment section
+4. Run `./elastic-start-local/stop.sh && ./elastic-start-local/start.sh`
+
+### DDEV project named incorrectly
+
+If `ddev status` shows the wrong project name (e.g. `labs` instead of `drupal-ai-agent`), you ran `ddev config` from a parent directory. Fix:
+
+```bash
+ddev stop
+cd drupal-ai-agent
+ddev config --project-type=drupal11 --docroot=web
+ddev start
+```
+
+### `ddev composer create-project` fails with subdirectory error
+
+Use DDEV's built-in wrapper without a path argument and without `--no-interaction`:
+
+```bash
+ddev composer create-project drupal/recommended-project
+```
+
+### Ports already in use
+
+```bash
+netstat -tulpn | grep -E ":(9200|5601|33000)"
+```
+
+If port 80 is busy, DDEV automatically falls back to port 33000.
+
+### ELSER model download stuck
+
+The `.elser_model_2_linux-x86_64` model is ~500MB. Check download status:
+
+```bash
+source ./elastic-start-local/.env
+curl "http://localhost:9200/_ml/trained_models/.elser_model_2_linux-x86_64" \
+  -u "elastic:${ES_LOCAL_PASSWORD}" | python3 -m json.tool | grep "state"
+```
+
+Wait until `state: "started"` before using it for inference.
+
+---
+
+## Quick Reference
+
+| Task | Command |
+|---|---|
+| Start all services | `./elastic-start-local/start.sh && ddev start` |
+| Stop all services | `./elastic-start-local/stop.sh && ddev stop` |
+| Install Drupal | `ddev drush site:install --account-name=admin --account-pass=admin --yes` |
+| Enable modules | `ddev drush pm:enable MODULE_NAME --yes` |
+| Index content | `ddev drush search-api:index` |
+| Open Drupal admin | `ddev launch /admin` |
+| Open Kibana | `http://localhost:5601` |
+| ES cluster health | `curl http://localhost:9200/_cluster/health -u elastic:PASSWORD` |
+| Get Docker bridge IP | `ddev exec ip route \| grep default \| awk '{print $3}'` |
+| View Elasticsearch password | `cat elastic-start-local/.env \| grep ES_LOCAL_PASSWORD` |
+
+---
+
+## Cleanup / Deprovisioning
+
+### Stop and remove DDEV project
+
+```bash
+cd drupal-ai-agent
+ddev stop
 ddev delete -O -y
 ```
 
-**Expected Output:**
-```text
-Container ddev-drupal-ai-agent-db Removed  
-Container ddev-drupal-ai-agent-web Removed  
-Network ddev-drupal-ai-agent_default Removed  
-Volume drupal-ai-agent-mariadb for project drupal-ai-agent was deleted 
-Image ddev/ddev-webserver:v1.25.1-drupal-ai-agent-built for project drupal-ai-agent was deleted 
-Image ddev/ddev-dbserver-mariadb-11.8:v1.25.1-drupal-ai-agent-built for project drupal-ai-agent was deleted 
-Project drupal-ai-agent was deleted. Your code and configuration are unchanged.
-```
+> Your code and configuration files remain on disk. Run `ddev start` to restore.
 
-**Note:** The `-O` flag optimizes cleanup by skipping some confirmations, and `-y` auto-confirms. Your project files remain intact in the directory.
+### Remove Elasticsearch
 
-### A.2 Stop and Remove Elasticsearch and Kibana
-
-**Step 1: Navigate to the Elastic Start-Local directory**
 ```bash
-cd ~/repos/labs/DrupalIberia2026/elastic-start-local
+./elastic-start-local/uninstall.sh
 ```
 
-**Step 2: Run the uninstall script**
-```bash
-./uninstall.sh
-```
+### Deep Docker cleanup (optional)
 
-**Expected Output:**
-```text
-[+] Stopping 3/3
- ✔ Container es-local-dev Stopped
- ✔ Container kibana-local-settings Stopped
- ✔ Container kibana-local-dev Stopped
-[+] Removing 3/3
- ✔ Container es-local-dev Removed
- ✔ Container kibana-local-settings Removed
- ✔ Container kibana-local-dev Removed
-Removing Network localhost_default ... done
-Elasticsearch and Kibana have been uninstalled!
-Files removed: docker-compose.yml, .env
-```
-
-### A.3 Clean Up Docker Resources (Optional Deep Cleanup)
-
-**Step 1: Remove unused Docker volumes**
 ```bash
 docker volume prune -f
-```
-
-**Expected Output:**
-```text
-Deleted Volumes:
-drupal-ai-agent-mariadb
-es-local-dev-data
-es-local-dev-logs
-kibana-local-dev-data
-Total reclaimed space: XXX.XXGB
-```
-
-**Step 2: Remove unused Docker images**
-```bash
 docker image prune -f
 ```
 
-**Expected Output:**
-```text
-Deleted Images:
-sha256:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Total reclaimed space: XXX.XXGB
-```
-
-**Step 3: Clean Docker builder cache (if desired)**
-```bash
-docker builder prune -f
-```
-
-**Expected Output:**
-```text
-deleted build cache objects
-Total reclaimed space: XXX.XXGB
-```
-
-### A.4 Verify All Services Are Removed
-
-**Step 1: Check running Docker containers**
-```bash
-docker ps
-```
-
-**Expected Output:**
-```text
-CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
-(no containers)
-```
-
-**Step 2: Verify DDEV is cleaned up**
-```bash
-ddev list
-```
-
-**Expected Output:**
-```text
-No projects found.
-```
-
-**Step 3: Verify Elasticsearch is not accessible**
-```bash
-curl -X GET "http://localhost:9200/_cluster/health" 2>&1
-```
-
-**Expected Output:**
-```text
-curl: (7) Failed to connect to localhost port 9200: Connection refused
-```
-
-### A.5 Remove Project Directory (Complete Cleanup)
-
-If you want to completely remove the tutorial project directory and all files:
-
-**Warning: This will delete all code and configuration files. Make sure you have backups if needed.**
+### Complete removal
 
 ```bash
-cd ~/repos/labs/DrupalIberia2026
+cd ..
 rm -rf drupal-ai-agent elastic-start-local
 ```
 
-**Verify the directories are removed:**
-```bash
-ls -la ~/repos/labs/DrupalIberia2026/
-```
+---
 
-### A.6 Troubleshooting Cleanup Issues
+## Additional Resources
 
-**If DDEV won't delete:**
-```bash
-ddev poweroff
-ddev delete --force
-```
-
-**If Elasticsearch containers remain:**
-```bash
-docker stop $(docker ps -a --filter "name=es-local\|kibana-local" -q)
-docker rm $(docker ps -a --filter "name=es-local\|kibana-local" -q)
-```
-
-**If Docker volumes persist:**
-```bash
-docker volume rm $(docker volume ls --filter "name=drupal-ai-agent\|es-local\|kibana-local" -q)
-```
-
-**If Docker images persist:**
-```bash
-docker rmi $(docker images --filter "reference=*drupal-ai-agent*\|*es-local*\|*kibana*" -q)
-```
-
-### A.7 System Resource Recovery
-
-After cleanup, verify your system resources have been freed:
-
-**Check available disk space:**
-```bash
-df -h
-```
-
-**Check available memory:**
-```bash
-free -h
-```
-
-**Check Docker system usage:**
-```bash
-docker system df
-```
-
-### Summary of Deprovisioning Steps
-
-| Service | Cleanup Command | Time Required |
-|---------|-----------------|----------------|
-| DDEV Project | `ddev delete -O -y` | ~30 seconds |
-| Elasticsearch | `./uninstall.sh` | ~20 seconds |
-| Docker Volumes | `docker volume prune -f` | ~5 seconds |
-| Docker Images | `docker image prune -f` | ~10 seconds |
-| Complete Cleanup | All above + `rm -rf` | ~2 minutes |
-
-### Notes
-
-- **Reversibility**: DDEV deletion is reversible by running `ddev start` again (project files remain)
-- **Data Loss**: Using `rm -rf` on directories will permanently delete code and configuration
-- **Docker Resources**: Running `docker system prune -a` will remove ALL unused Docker resources system-wide, not just from this tutorial
-- **Backup Recommendation**: Before running complete cleanup, backup your Drupal database if you created important content
-
-Your system is now clean and free of all tutorial-related services!
+- [Drupal AI Module](https://www.drupal.org/project/ai)
+- [Search API Elasticsearch Client](https://www.drupal.org/project/search_api_elasticsearch_client)
+- [ELSER Documentation](https://www.elastic.co/guide/en/machine-learning/current/ml-nlp-elser.html)
+- [Elasticsearch Inference API](https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html)
+- [DDEV Documentation](https://ddev.readthedocs.io/)
+- [MCP Server Module](https://www.drupal.org/project/mcp_server)
