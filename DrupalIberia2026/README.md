@@ -1,6 +1,6 @@
 # Drupal AI Agent with Elasticsearch
 
-Build a RAG-powered AI agent inside Drupal that answers questions using your content, indexed in Elasticsearch with ELSER semantic search, answered by an LLM via LiteLLM.
+Build a RAG-powered AI agent inside Drupal that answers questions using your content, indexed in Elasticsearch with ELSER semantic search, answered by an LLM.
 
 ```
 User question → Drupal AI Agent → RAG search (Search API)
