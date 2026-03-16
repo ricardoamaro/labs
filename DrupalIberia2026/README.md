@@ -57,9 +57,9 @@ ddev composer require \
   'drupal/ai_provider_litellm' \
   'drupal/key' \
   'drupal/search_api' \
-  'drupal/search_api_elasticsearch_client' \
+  'drupal/search_api_elasticsearch_client:^1.0' \
   'drupal/search_api_attachments' \
-  'elasticsearch/elasticsearch'
+  'elasticsearch/elasticsearch:^8.11'
 ```
 
 > **Never install `drupal/elasticsearch_connector`** — it conflicts with `search_api_elasticsearch_client` and crashes the Search API server form with a `PluginException`.
@@ -317,7 +317,64 @@ A hit with score > 0 confirms the full ELSER pipeline is working.
 
 ---
 
-## Section 7: Configure LiteLLM Provider
+## Section 7: Advanced — Hybrid Search with RRF
+
+Pure ELSER semantic search is powerful but can miss exact keyword matches (SKU numbers, proper nouns, code identifiers). Hybrid search combines ELSER sparse vectors with BM25 keyword scoring using **Reciprocal Rank Fusion (RRF)** — no manual score normalization required.
+
+### 7.1 Test hybrid search via Kibana Dev Tools
+
+Go to `http://localhost:5601/app/dev_tools#/console`:
+
+```json
+GET drupal_content/_search
+{
+  "retriever": {
+    "rrf": {
+      "retrievers": [
+        {
+          "standard": {
+            "query": {
+              "match": { "body": "GDPR compliance" }
+            }
+          }
+        },
+        {
+          "standard": {
+            "query": {
+              "sparse_vector": {
+                "field": "body_vector",
+                "inference_id": "elser-model",
+                "query": "data privacy requirements"
+              }
+            }
+          }
+        }
+      ],
+      "rank_constant": 60,
+      "rank_window_size": 100
+    }
+  }
+}
+```
+
+RRF merges both ranked lists — documents appearing high in both get the strongest boost. This handles cases where ELSER alone would miss an exact product code, but BM25 alone would miss a semantically related concept.
+
+### 7.2 Add the Boost by AI Search processor (optional)
+
+The `ai_search` module ships a **Boost Database by AI Search** processor that blends ELSER results into standard Search API queries. Enable it on the index:
+
+Go to `/admin/config/search/search-api/index/drupal_content/processors` and enable **Boost Database by AI Search**. Configure the AI Search index to `drupal_content` and set a weight between `0.1` (subtle boost) and `1.0` (strong preference for semantic results).
+
+Save and reindex:
+
+```bash
+ddev drush search-api:reset-tracker drupal_content
+ddev drush search-api:index drupal_content
+```
+
+---
+
+## Section 8: Configure LiteLLM Provider
 
 ### 7.1 Verify LiteLLM is running
 
@@ -339,11 +396,9 @@ Then go to `/admin/config/ai/providers` → LiteLLM:
 
 Save — confirm green status.
 
-> **Security Note:** Never commit API keys to version control. The `.env` files and any configuration containing secrets should be added to `.gitignore`. Use environment variables or a secrets manager for production deployments. Consider rotating the LiteLLM API key periodically and using Drupal's built-in key management (`/admin/config/system/keys`) to store the proxy key separately from the LiteLLM provider key.
-
 ---
 
-## Section 8: Create the AI Agent
+## Section 9: Create the AI Agent
 
 ### 8.1 Create the agent
 
@@ -404,7 +459,7 @@ Save.
 
 ---
 
-## Section 9: Test the Agent
+## Section 10: Test the Agent
 
 Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, choose a model (e.g. `gemini-2.5-flash`).
 
@@ -425,7 +480,59 @@ search_string: 'data privacy Europe'
 
 ---
 
-## Section 10: Index PDFs
+## Section 11: Advanced — Multi-Agent Swarm Orchestration
+
+For complex workflows, the `ai_agents` module supports a **Swarm** architecture where a coordinator agent delegates work to specialized sub-agents. This reduces hallucinations and improves accuracy by separating retrieval from synthesis.
+
+### 11.1 Enable Swarm Orchestration on the Content Assistant
+
+Go to `/admin/config/ai/agents/content_assistant/edit/form` and check **Swarm orchestration agent**. This makes the Content Assistant a coordinator that can delegate to other agents.
+
+### 11.2 Create a Relevance Grader agent
+
+Go to `/admin/config/ai/ai-assistant/add` and create a second agent:
+
+| Field | Value |
+|---|---|
+| Label | `Relevance Grader` |
+| Machine name | `relevance_grader` |
+| AI Provider | LiteLLM Proxy (use a fast, cheap model like `gemini-2.5-flash-lite`) |
+
+**Instructions:**
+
+```
+You are a document relevance grader. You receive a question and a retrieved document chunk.
+Respond with only "RELEVANT" if the document genuinely helps answer the question, or "IRRELEVANT" if it does not.
+Do not add explanation. One word only.
+```
+
+Do not add any tools to this agent. Save.
+
+### 11.3 Wire the Grader into the Swarm
+
+Go back to the Content Assistant edit form. Under **Tools → Select tools**, add **Relevance Grader** as a sub-agent tool alongside RAG/Vector Search.
+
+Update the Content Assistant instructions:
+
+```
+You are a Drupal content assistant coordinating a two-stage retrieval workflow.
+
+Step 1: Call ai_search_rag_search with index=drupal_content to retrieve candidate documents.
+Step 2: For each retrieved chunk, call relevance_grader to score it RELEVANT or IRRELEVANT.
+Step 3: Use only RELEVANT chunks to formulate your final answer.
+
+If no chunks are RELEVANT, say so clearly rather than guessing.
+```
+
+This two-stage pattern dramatically reduces noise — the grader filters out tangentially related content before the answer is generated.
+
+### 11.4 Test the swarm
+
+Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, and ask a question that would previously return low-quality results. The Progress panel will now show two agent steps: the RAG retrieval and the grader evaluation.
+
+---
+
+## Section 12: Index PDFs
 
 ### 10.1 Setup
 
@@ -481,7 +588,7 @@ ddev drush search-api:index drupal_content
 
 ---
 
-## Section 11: Browse with Kibana
+## Section 13: Browse with Kibana
 
 ### Create a Data View
 
@@ -531,7 +638,7 @@ GET drupal_content/_search
 
 ---
 
-## Section 12: Optional — MCP Server Integration
+## Section 14: Optional — MCP Server Integration
 
 Enables external AI assistants (Claude, Cursor) to interact with Drupal via Model Context Protocol.
 
