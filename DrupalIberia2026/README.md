@@ -57,11 +57,11 @@ ddev composer require \
   'drupal/ai_provider_litellm' \
   'drupal/key' \
   'drupal/search_api' \
-  'drupal/ai_vdb_provider_elasticsearch' \
-  'drupal/search_api_attachments'
+  'drupal/search_api_attachments' \
+  'drupal/ai_vdb_provider_elasticsearch:^1.0@alpha'
 ```
 
-> The `elastic/elasticsearch` PHP client ^8.0 is pulled in automatically by `drupal/ai_vdb_provider_elasticsearch` — no need to require it separately.
+> The `elastic/elasticsearch` PHP client ^8.0 is pulled in automatically — no need to require it separately.
 
 > **Never install `drupal/elasticsearch_connector`** — it conflicts with the Search API server form and causes a `PluginException`.
 
@@ -116,6 +116,8 @@ Verify Elasticsearch is running:
 curl "http://localhost:9200/_cluster/health?pretty"
 # Expected: "status": "green" or "yellow"
 ```
+
+> **Note:** `ddev describe` may show the `elasticsearch` service as `stopped` — this is a display quirk for custom docker-compose services. The `curl` response above is the authoritative health check.
 
 ### 3.1 Get the Docker bridge IP (Linux only — needed for LiteLLM)
 
@@ -189,6 +191,21 @@ Go to `/admin/config/search/search-api/add-server`:
 
 Save — confirm the green "server could be reached" message.
 
+### 6.1.1 Verify the AI Search backend settings explicitly
+
+After saving, edit the server again and confirm these backend settings are present:
+
+| Setting | Value |
+|---|---|
+| Vector Database | `Elasticsearch` |
+| Embeddings engine | your LiteLLM embedding model, for example `litellm__gemini-embedding-001` |
+| Tokenizer chat counting model | your LiteLLM chat model, for example `litellm__gemini-flash-latest` |
+| Embedding strategy | `contextual_chunks` |
+| Chunk size | `500` |
+| Chunk minimum overlap | `100` |
+
+These settings are required. If the Vector Database, embeddings engine, or chat model are blank, indexing will fail or produce no vectors.
+
 ### 6.2 Create the index
 
 Go to `/admin/config/search/search-api/add-index`:
@@ -213,6 +230,21 @@ Go to `/admin/config/search/search-api/index/drupal_content/fields` → Add:
 
 Save changes. The module will create the Elasticsearch index automatically on the first full index run.
 
+### 6.3.1 Mark each Search API field for AI Search explicitly
+
+This step is required for vector search. Adding fields to the Search API index is not enough by itself.
+
+Go to `/admin/config/search/search-api/index/drupal_content/fields/ai_search` and set:
+
+| Field | AI Search indexing option |
+|---|---|
+| Body | **Main content** |
+| Title | **Contextual content** |
+| Content type | **Attributes** |
+| Published | **Attributes** |
+
+Do not leave these fields as **Ignore** unless you intentionally want them excluded from vector retrieval.
+
 ---
 
 ## Section 7: Create Content and Index
@@ -229,6 +261,16 @@ Example: title `GDPR Compliance Guide`, body covering GDPR requirements, data su
 ddev drush search-api:reset-tracker drupal_content
 ddev drush search-api:index drupal_content
 ```
+
+The `search-api:reset-tracker` step is required whenever you change:
+
+- the AI Search backend settings,
+- the embedding model,
+- the Search API field list,
+- the AI Search field mapping,
+- or newly add PDF extraction fields.
+
+Without a full reset and reindex, Drupal can keep stale tracking state and Elasticsearch will not reflect the latest embedding configuration.
 
 ### 7.3 Verify the index was created and vectors are stored
 
@@ -327,6 +369,8 @@ Report titles and summarize content from all results found.
 
 Under **Tools**, add **RAG/Vector Search** only. Remove all other tools. Save.
 
+This is required for the first working setup. Do not leave unrelated tools enabled, or the assistant may avoid the RAG tool and answer without retrieval.
+
 ### 9.2 Fix tool settings (UI bug workaround)
 
 The agent UI does not reliably persist tool settings to the config entity. Set directly:
@@ -358,11 +402,13 @@ Under **Property setup → Restrictions for property index**:
 
 Save.
 
+This is required. If you leave the index unrestricted, the agent can call the tool with the wrong index name and retrieval will silently miss your content.
+
 ---
 
 ## Section 10: Test the Agent
 
-Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, choose a model (e.g. `gemini-2.5-flash`).
+Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, choose a model (e.g. `gemini-flash-latest`).
 
 **Keyword test:**
 > "What articles do we have about GDPR compliance?"
@@ -397,7 +443,7 @@ Go to `/admin/config/ai/ai-assistant/add` and create a second agent:
 |---|---|
 | Label | `Relevance Grader` |
 | Machine name | `relevance_grader` |
-| AI Provider | LiteLLM Proxy (use a fast, cheap model like `gemini-2.5-flash-lite`) |
+| AI Provider | LiteLLM Proxy (use a fast, cheap model like `gemini-flash-latest`) |
 
 **Instructions:**
 
@@ -454,6 +500,19 @@ Go to `/admin/config/search/search-api/index/drupal_content/fields` → **Add fi
 ### 12.4 Enable the file extraction processor
 
 Go to `/admin/config/search/search-api/index/drupal_content/processors` and enable the **File attachments** processor provided by `search_api_attachments`. Save.
+
+### 12.5 Mark PDF extracted text for vector embedding (required)
+
+This step is required. If you skip it, PDF text can be extracted but not embedded, and semantic RAG queries will miss those documents.
+
+Go to `/admin/config/search/search-api/index/drupal_content/fields/ai_search` and set the indexing option for your extracted **File contents** field to:
+
+- **Main content** (recommended), or
+- **Contextual content**
+
+Do **not** leave it as **Ignore**.
+
+Then save.
 
 The module will automatically extract text from uploaded PDFs and include it in the fields sent to Elasticsearch for embedding — no manual pipeline update needed.
 
@@ -557,6 +616,30 @@ Check that the VDB provider is saved correctly and the Search API server uses th
 ddev drush search-api:reset-tracker drupal_content
 ddev drush search-api:index drupal_content
 curl "http://localhost:9200/_cat/indices?v"
+```
+
+Also verify the server backend settings are not blank for:
+- Vector Database
+- Embeddings engine
+- Tokenizer chat counting model
+
+**PDF uploads are indexed but not found by semantic queries**
+Check `/admin/config/search/search-api/index/drupal_content/fields/ai_search` and ensure the extracted **File contents** field is set to **Main content** or **Contextual content** (not **Ignore**). Then reindex:
+```bash
+ddev drush search-api:reset-tracker drupal_content
+ddev drush search-api:index drupal_content
+```
+
+**Content exists but RAG still returns no useful results**
+Check `/admin/config/search/search-api/index/drupal_content/fields/ai_search` and make sure:
+- **Body** is **Main content**
+- **Title** is **Contextual content**
+- filter fields such as **Content type** and **Published** are **Attributes**
+
+Then run a full reindex:
+```bash
+ddev drush search-api:reset-tracker drupal_content
+ddev drush search-api:index drupal_content
 ```
 
 **Mapping error on indexing (vector dimension mismatch)**
