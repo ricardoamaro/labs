@@ -1,1 +1,0 @@
-/home/ricardo/githome/AILab/AGENTS/TUTORIALS.md

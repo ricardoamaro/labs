@@ -38,6 +38,8 @@ composer.lock
 .idea/
 *.sublime-workspace
 *.sublime-project
+AGENTS.md
+tasks/
 
 # OS files
 .DS_Store
