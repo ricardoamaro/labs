@@ -10,13 +10,42 @@ User question → Drupal AI Agent → RAG search (AI Search VDB)
 ## Prerequisites
 
 - Docker 20.10+, DDEV (latest), Git, curl, jq
-- LiteLLM proxy running with at least one chat model **and** one embedding model
-- 8GB RAM, 20GB free disk
-- Ports 9200 (Elasticsearch), 33000 (DDEV) free
+- An OpenAI-compatible AI provider running locally with **one chat model and one embedding model**. This tutorial uses [LM Studio](https://lmstudio.ai/) (default port `1234`), but LiteLLM, Ollama, vLLM, or any OpenAI-compatible endpoint works
+- 8GB RAM, 20GB free disk (more if you load larger LLMs into LM Studio)
+- Ports 9200 (Elasticsearch), 33000 (DDEV), 1234 (LM Studio) free
+
+### Install DDEV (macOS)
+
+```bash
+brew tap ddev/ddev
+brew install ddev
+```
+
+For Linux / Windows, follow the [official DDEV install guide](https://ddev.readthedocs.io/en/stable/users/install/).
+
+Verify all prerequisites:
 
 ```bash
 docker --version && ddev version && git --version && curl --version
 ```
+
+### LM Studio models used in this tutorial
+
+Open LM Studio → **Models** and load at least one chat model and one embedding model. Recommended:
+
+| Role | Model | Why |
+|---|---|---|
+| Chat / agent | `qwen/qwen3-32b` (or `qwen3.6-35b-a3b` MoE if you have it) | Strong tool-calling, OpenAI-compatible function calls work reliably |
+| Chat (lighter) | `openai/gpt-oss-20b` or `google/gemma-3-27b` | Fits in less VRAM if 30B+ is too heavy |
+| Embeddings | `text-embedding-nomic-embed-text-v1.5` (768 dims) | Battle-tested, fast, good multilingual coverage |
+
+Start the LM Studio server (Developer tab → **Start Server**) and verify it returns models:
+
+```bash
+curl -s http://localhost:1234/v1/models | jq '.data[].id'
+```
+
+You should see your loaded chat and embedding models in the list.
 
 ---
 
@@ -42,12 +71,14 @@ If there is no `composer.json` in the directory (starting from scratch), scaffol
 ddev composer create-project drupal/recommended-project:^11 . --no-interaction
 ```
 
-> If the command fails because the directory is not empty, remove the empty `web/` folder first: `rmdir web`
+> If the command fails because the directory is not empty, remove the `web/` folder first. DDEV 1.25+ scaffolds a `web/sites/default/settings.php` during `ddev config`, so a plain `rmdir web` will fail — use `rm -rf web` instead.
 
 ```bash
 ddev start
 ddev status   # Project name must show 'drupal-ai-agent'
 ```
+
+DDEV will print the URL the project is reachable at — typically `http://drupal-ai-agent.ddev.site` (modern DDEV uses standard 80/443 via its mkcert-issued certificate; no `:33000` suffix). Use whatever URL `ddev start` prints whenever this guide refers to opening Drupal in a browser.
 
 ---
 
@@ -68,12 +99,14 @@ ddev composer require \
   'drupal/ai' \
   'drupal/ai_agents' \
   'drupal/modeler_api' \
-  'drupal/ai_provider_litellm' \
+  'drupal/ai_provider_lmstudio' \
   'drupal/key' \
   'drupal/search_api' \
   'drupal/search_api_attachments' \
   'drupal/ai_vdb_provider_elasticsearch:^1.0@alpha'
 ```
+
+> Using a different OpenAI-compatible backend? Swap `drupal/ai_provider_lmstudio` for `drupal/ai_provider_litellm`, `drupal/ai_provider_ollama`, or `drupal/ai_provider_openai` — all of the rest of this tutorial is identical, only the provider name changes.
 
 > The `elastic/elasticsearch` PHP client ^8.0 is pulled in automatically — no need to require it separately.
 
@@ -85,7 +118,7 @@ ddev composer require \
 ddev drush site:install --account-name=admin --account-pass=admin --yes
 
 ddev drush pm:enable \
-  ai ai_search ai_provider_litellm key \
+  ai ai_search ai_provider_lmstudio key \
   modeler_api ai_agents ai_agents_explorer ai_agents_extra ai_agents_extra_tools \
   ai_chatbot ai_assistant_api ai_api_explorer \
   search_api search_api_attachments ai_vdb_provider_elasticsearch \
@@ -167,7 +200,7 @@ source ../elastic-start-local/.env
 echo $ES_LOCAL_API_KEY
 ```
 
-Open the Drupal instalation in the browser (Eg. `http://drupal-ai-agent.ddev.site:33000`)
+Open the Drupal installation in the browser (e.g. `http://drupal-ai-agent.ddev.site`).
 
 Go to `/admin/config/system/keys/add` and create a key:
 
@@ -196,30 +229,47 @@ Save — confirm no connection error is shown.
 
 ---
 
-## Section 5: Configure LiteLLM or any AI other Provider
+## Section 5: Configure the LM Studio Provider (or any OpenAI-compatible AI provider)
 
-This tutorial uses litellm provider but you can use any other like OpenAI, Anthropic, Gemini, etc.
+This tutorial uses [LM Studio](https://lmstudio.ai/), which exposes an OpenAI-compatible API on port `1234` by default. The same flow works for LiteLLM (`drupal/ai_provider_litellm`), Ollama (`drupal/ai_provider_ollama`), or OpenAI itself (`drupal/ai_provider_openai`) — only the module name and port differ.
 
-### 5.1 Verify LiteLLM is running
+### 5.1 Verify LM Studio is running and exposes the right models
+
+In the **LM Studio app**, open the **Developer** tab and click **Start Server**. Then:
 
 ```bash
-curl http://localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_API_KEY"
+curl -s http://localhost:1234/v1/models | jq '.data[].id'
 ```
 
-Confirm the output includes at least one **chat** model and at least one **embedding** model. The VDB provider uses the embedding model to generate dense vectors at index time and at query time.
+You must see at least one chat model (e.g. `google/gemma-4-e4b`, `qwen/qwen3-32b`) **and** one embedding model (e.g. `text-embedding-nomic-embed-text-v1.5`). The VDB provider uses the embedding model to generate dense vectors at index time and at query time.
 
-### 5.2 Store the key and configure the provider
+> Some MLX-backend chat models on Apple Silicon can fail to load with `dlopen ... libpython3.11.dylib not found`. If a model loads in LM Studio's chat UI but breaks via the API, swap to a model that uses LM Studio's llama.cpp backend (most non-MLX GGUF models) or reinstall the MLX runtime from LM Studio's Settings → Runtimes.
 
-Go to `/admin/config/system/keys/add` and create a key with your `$LITELLM_API_KEY` value.
+### 5.2 Configure the provider (no API key needed for LM Studio)
 
-Then go to `/admin/config/ai/providers` → LiteLLM or your provider of choice:
+LM Studio doesn't require an API key by default, so skip the Key entity step. Go to `/admin/config/ai/providers/lmstudio`:
 
 | Field | Value |
 |---|---|
-| API Key | the key you just created |
-| Host | `http://BRIDGE_IP:4000` (Linux) or `http://host.docker.internal:4000` (Mac/Win) |
+| Host Name | `http://host.docker.internal` (Mac/Win) or the bridge IP from Section 3.1 (Linux) |
+| Port | `1234` |
 
-Save — confirm green status.
+Save. (You may see a one-time `Could not load the LM Studio API key` notice in `drush watchdog:show` — this is harmless, the AI module logs it whenever a provider is queried without auth and LM Studio doesn't need any.)
+
+### 5.3 Set sensible defaults so other modules pick the right model
+
+```bash
+ddev drush ev '
+$config = \Drupal::configFactory()->getEditable("ai.settings");
+$config->set("default_providers", [
+  "chat" => ["provider_id" => "lmstudio", "model_id" => "google/gemma-4-e4b"],
+  "embeddings" => ["provider_id" => "lmstudio", "model_id" => "text-embedding-nomic-embed-text-v1.5"],
+  "chat_with_tools" => ["provider_id" => "lmstudio", "model_id" => "qwen/qwen3-32b"],
+])->save();
+'
+```
+
+Replace the model IDs with whatever LM Studio reports under `/v1/models`. The `chat_with_tools` model must reliably emit OpenAI-style function calls — Qwen 3, gpt-oss-20b, and recent Gemma instruction-tuned models all work; reasoning-only models often consume their token budget on `<think>` and never emit a tool call.
 
 ---
 
@@ -238,8 +288,8 @@ Under **Configure AI Search backend**:
 
 | Field | Value |
 |---|---|
-| Embeddings Engine | your LiteLLM embedding model, e.g. `LiteLLM Proxy \| gemini-embedding-001` |
-| Tokenizer chat counting model | your LiteLLM chat model, e.g. `LiteLLM Proxy \| gemini-flash-latest` |
+| Embeddings Engine | your LM Studio embedding model, e.g. `LM Studio \| text-embedding-nomic-embed-text-v1.5` |
+| Tokenizer chat counting model | your LM Studio chat model, e.g. `LM Studio \| google/gemma-4-e4b` |
 | Vector Database | `Elasticsearch (Native kNN)` |
 
 Under **Vector Database Configuration** (appears after selecting Elasticsearch):
@@ -257,7 +307,7 @@ Under **Advanced Embeddings Engine Configuration**:
 | Field | Value |
 |---|---|
 | Set Dimensions Manually | ☐ off — auto-detected from the embedding model |
-| Number of dimensions | `3072` (auto-filled, do not change) |
+| Number of dimensions | `768` for `nomic-embed-text-v1.5`. The form auto-detects this — leave it alone. Different embedding models produce different dimensions (e.g. `text-embedding-3-small` → 1536; `gemini-embedding-001` → 3072). If you switch models later, you must delete the ES index and reindex (see Troubleshooting). |
 
 Under **Advanced Embeddings Strategy Configuration**:
 
@@ -266,6 +316,8 @@ Under **Advanced Embeddings Strategy Configuration**:
 | Strategy | `Enriched Embedding Strategy` |
 | Maximum chunk size | `500` tokens |
 | Minimum chunk overlap for Main Content | `100` tokens |
+
+> **Both chunk values are required, not optional.** If you script the server creation and forget them, the indexer fatals with `Typed property Drupal\ai_search\Plugin\EmbeddingStrategy\EmbeddingBase::$chunkMinOverlap must not be accessed before initialization`. The form's defaults (500 / 100) are sane — leave them alone if you're not sure.
 
 These settings are required. If Vector Database or Embeddings Engine are blank, indexing will fail or produce no vectors.
 
@@ -279,36 +331,35 @@ Go to `/admin/config/search/search-api/add-index`:
 |---|---|
 | Index name | `Content` |
 | Machine name | `content` — with prefix `drupal_` the ES index will be `drupal_content` |
-| Datasources | `Content` → Article bundle only |
+| Datasources | ✅ `Content` (Article bundle only) **and** ✅ `File` |
 | Server | `Elasticsearch` |
 
-### 6.3 Add fields
+> **Why two datasources?** Article bodies live on the node entity and
+> file content (PDF / Markdown text extracted by Search API Attachments)
+> lives on the file entity. Adding both makes the same index serve
+> editorial pages and document uploads — the chatbot in Section 10 then
+> retrieves either path identically. With only `Content`, anything you
+> upload via `/media/add/document` in §12 will never reach Elasticsearch.
 
-Go to `/admin/config/search/search-api/index/content/fields` → Add:
+### 6.3 Add fields and mark them for AI Search
 
-| Field | Type |
-|---|---|
-| Title | **Fulltext** |
-| Body | **Fulltext** |
-| Content type | String |
-| Published | Boolean |
+Go to `/admin/config/search/search-api/index/content/fields` → **Add fields**.
+Each row also has an **AI Search indexing option** column — set both at
+the same time:
 
-Save changes. The module will create the Elasticsearch index automatically on the first full index run.
-
-### 6.3.1 Mark each Search API field for AI Search explicitly
-
-This step is required for vector search. Adding fields to the Search API index is not enough by itself.
-
-On the same `/admin/config/search/search-api/index/content/fields` page, each field has an **AI Search indexing option** column. Set:
-
-| Label | Machine name | Type | Indexing option |
+| Field | Datasource | Type | AI Search indexing option |
 |---|---|---|---|
-| Body | `body` | Fulltext | **Main content** |
-| Title | `title` | Fulltext | **Contextual content** |
-| Content type | `type` | String | **Filterable Attributes** |
-| Published | `status` | Boolean | **Filterable Attributes** |
+| Title | Content | Fulltext | **Contextual content** |
+| Body | Content | Fulltext | **Main content** |
+| Content type | Content | String | **Filterable Attributes** |
+| Published | Content | Boolean | **Filterable Attributes** |
+| Filename | File | String | **Contextual content** |
+| File contents *(added by the **File attachments** processor — see §12)* | — | Fulltext | **Main content** |
 
-The form will not save until every field has an option selected — **Ignore** is a valid choice if you want to exclude a field from vector retrieval.
+The form will not save until every field has an indexing option set —
+**Ignore** is a valid choice if you want to exclude a field from vector
+retrieval. Save changes; the module creates the Elasticsearch index
+automatically on the first full index run.
 
 ---
 
@@ -349,11 +400,11 @@ Verify vectors are indexed by running a kNN search. On **Elasticsearch 9.x**, th
 
 ```bash
 source ../elastic-start-local/.env
-# Generate an embedding from LiteLLM (replace model and key as needed)
-EMB=$(curl -s -H "Authorization: Bearer $LITELLM_API_KEY" \
-  "http://YOUR_LITELLM_HOST:4000/v1/embeddings" \
+# Generate a query embedding from LM Studio. Swap the model if you loaded
+# something other than nomic-embed-text-v1.5 in §5.
+EMB=$(curl -s http://localhost:1234/v1/embeddings \
   -H "Content-Type: application/json" \
-  -d '{"model": "YOUR_EMBEDDING_MODEL", "input": "GDPR compliance"}' | \
+  -d '{"model":"text-embedding-nomic-embed-text-v1.5","input":"GDPR compliance"}' | \
   python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['data'][0]['embedding']))")
 
 # Run kNN search
@@ -419,50 +470,33 @@ ddev drush search-api:index content
 
 ## Section 9: Create the AI Agent
 
+This tutorial uses the `ai_agents` module (not the older `ai_assistant_api`), which is what the **AI Agent Explorer** in Section 10 talks to.
+
 ### 9.1 Create the agent
 
-Go to `/admin/config/ai/ai-assistant/add`:
+Go to `/admin/config/ai/agents/add`:
 
 | Field | Value |
 |---|---|
 | Label | `Content Assistant` |
 | Machine name | `content_assistant` |
-| AI Provider | LiteLLM Proxy |
 
-**Instructions:**
+**Agent Instructions (System Prompt):**
 
 ```
 You are a helpful Drupal content assistant.
-To answer ANY question, you MUST call ai_search_rag_search with:
-- index: drupal_content
-- search_string: relevant keywords from the question
-
-The index name is ALWAYS drupal_content. Never use any other index name.
+To answer ANY question, you MUST call ai_search_rag_search with relevant keywords from the question.
 Report titles and summarize content from all results found.
+If the search returns nothing relevant, say so clearly rather than guessing.
 ```
 
-Under **Tools**, add **RAG/Vector Search** only. Remove all other tools. Save.
+Leave **Swarm orchestration agent** and **Triage agent** unchecked for now (we'll enable swarm in Section 11).
 
-This is required for the first working setup. Do not leave unrelated tools enabled, or the assistant may avoid the RAG tool and answer without retrieval.
+Under **Tools**, search for and add **RAG/Vector Search** only. Remove all other tools — leaving extra tools enabled often makes the LLM avoid the RAG tool and answer from its own knowledge. Save.
 
-### 9.2 Fix tool settings (UI bug workaround)
+### 9.2 Configure RAG tool settings
 
-The agent UI does not reliably persist tool settings to the config entity. Set directly:
-
-```bash
-ddev drush ev "
-\$config = \Drupal::configFactory()->getEditable('ai_assistant_api.ai_assistant.content_assistant');
-\$config->set('actions_enabled', ['ai_search_rag_search' => 'ai_search_rag_search']);
-\$config->save();
-echo 'Saved: ';
-print_r(\$config->get('actions_enabled'));
-"
-ddev drush cr
-```
-
-### 9.3 Configure RAG tool settings
-
-Go to `/admin/config/ai/agents/content_assistant/edit/form` → **Tools → RAG/Vector Search → Detailed tool usage**:
+After saving, edit the agent again at `/admin/config/ai/agents/content_assistant/edit/form`. Scroll down to **Detailed tool usage → RAG/Vector Search**:
 
 | Setting | Value | Why |
 |---|---|---|
@@ -470,19 +504,52 @@ Go to `/admin/config/ai/agents/content_assistant/edit/form` → **Tools → RAG/
 | ✅ Require Usage | on | Forces the tool to always be called |
 | ☐ Use Artifact storage | **off** | Artifact tokens `{{artifact:...}}` are not resolved and break output |
 
-Under **Property setup → Restrictions for property index**:
-- Set to **Force value** + **Hide property**
-- Value: `drupal_content`
+Under **Property restrictions → index**:
+- **Action**: `Force value`
+- **Hide property**: ✅ on
+- **Value**: `content`
+
+> **Important:** the `index` parameter is the **Search API index machine name** (`content`), not the Elasticsearch index name (`drupal_content`). The RAG tool calls `\Drupal::entityTypeManager()->getStorage('search_api_index')->load($index)` internally, so it expects the Drupal-side ID. With `index_prefix=drupal_`, the matching ES index is `drupal_content`, but you don't reference that here.
 
 Save.
 
-This is required. If you leave the index unrestricted, the agent can call the tool with the wrong index name and retrieval will silently miss your content.
+### 9.3 Equivalent drush setup (handy if the UI is fiddly)
+
+If you'd rather skip the form clicking, the same agent can be created from drush:
+
+```bash
+ddev drush ev '
+$agent = \Drupal\ai_agents\Entity\AiAgent::create([
+  "id" => "content_assistant",
+  "label" => "Content Assistant",
+  "description" => "Answers questions about indexed Drupal content using RAG over Elasticsearch.",
+  "system_prompt" => "You are a helpful Drupal content assistant. To answer ANY question, you MUST call ai_search_rag_search with relevant keywords from the question. Report titles and summarize content from all results found. If the search returns nothing relevant, say so clearly rather than guessing.",
+  "secured_system_prompt" => "[ai_agent:agent_instructions]",
+  "tools" => ["ai_search:rag_search" => TRUE],
+  "tool_settings" => [
+    "ai_search:rag_search" => [
+      "return_directly" => 1,
+      "require_usage" => 1,
+      "use_artifacts" => 0,
+    ],
+  ],
+  "tool_usage_limits" => [
+    "ai_search:rag_search" => [
+      "index" => ["action" => "force_value", "hide_property" => 1, "values" => ["content"]],
+    ],
+  ],
+  "max_loops" => 5,
+]);
+$agent->save();
+echo "Created agent: " . $agent->id() . PHP_EOL;
+'
+```
 
 ---
 
 ## Section 10: Test the Agent
 
-Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, choose a model (e.g. `gemini-flash-latest`).
+Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, and choose a model. For LM Studio pick the chat-with-tools model you set in Section 5.3 (e.g. `LM Studio | qwen/qwen3-32b`).
 
 **Keyword test:**
 > "What articles do we have about GDPR compliance?"
@@ -490,13 +557,31 @@ Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, choose a 
 **Semantic test (no keyword overlap):**
 > "What do we have about data privacy for people in Europe?"
 
-The second query proves kNN semantic search is working — no "GDPR" keyword, but the article should still be found. The Progress panel should show:
+The second query proves kNN semantic search is working — no "GDPR" keyword, but the GDPR article should still come back as the top result. The Progress panel should show:
 
 ```
 Tool: ai_search_rag_search
-index: drupal_content
+index: content
 search_string: 'data privacy Europe'
-→ Search result: #1 ...
+→ Search result: #1 GDPR Compliance Guide...
+```
+
+If you'd rather test from the command line without the UI, use this one-liner:
+
+```bash
+ddev drush ev '
+use Drupal\ai_agents\Task\Task;
+use Drupal\ai_agents\PluginInterfaces\AiAgentInterface;
+$default = \Drupal::config("ai.settings")->get("default_providers")["chat_with_tools"];
+$provider = \Drupal::service("ai.provider")->createInstance($default["provider_id"]);
+$agent = \Drupal::service("plugin.manager.ai_agents")->createInstance("content_assistant");
+$agent->setTask(new Task("What articles do we have about GDPR compliance?"));
+$agent->setAiProvider($provider);
+$agent->setModelName($default["model_id"]);
+$agent->setAiConfiguration([]);
+$agent->setCreateDirectly(TRUE);
+echo $agent->solve();
+'
 ```
 
 ---
@@ -511,13 +596,13 @@ Go to `/admin/config/ai/agents/content_assistant/edit/form` and check **Swarm or
 
 ### 11.2 Create a Relevance Grader agent
 
-Go to `/admin/config/ai/ai-assistant/add` and create a second agent:
+Go to `/admin/config/ai/agents/add` and create a second agent:
 
 | Field | Value |
 |---|---|
 | Label | `Relevance Grader` |
 | Machine name | `relevance_grader` |
-| AI Provider | LiteLLM Proxy (use a fast, cheap model like `gemini-flash-latest`) |
+| AI Provider | LM Studio (use the lightest chat model you have, e.g. `google/gemma-4-e4b`) |
 
 **Instructions:**
 
@@ -538,7 +623,7 @@ Update the Content Assistant instructions:
 ```
 You are a Drupal content assistant coordinating a two-stage retrieval workflow.
 
-Step 1: Call ai_search_rag_search with index=drupal_content to retrieve candidate documents.
+Step 1: Call ai_search_rag_search to retrieve candidate documents (the index is already forced to `content`).
 Step 2: For each retrieved chunk, call relevance_grader to score it RELEVANT or IRRELEVANT.
 Step 3: Use only RELEVANT chunks to formulate your final answer.
 
@@ -573,49 +658,54 @@ Go to `/admin/config/search/search-api-attachments` and set:
 
 Save.
 
-### 12.2 Add a Document media field to Article
+> **If `PHP PdfParser` isn't in the Extraction method dropdown**, the
+> alpha you installed predates the bundled extractor. Two options:
+> (a) update — `ddev composer update drupal/ai_vdb_provider_elasticsearch`;
+> or (b) fall back to `Pdftotext Extractor` and install poppler-utils
+> in the web container — `ddev exec sudo apt-get update && sudo apt-get install -y poppler-utils`.
+> The pure-PHP path is the recommended one but pdftotext works just as
+> well for indexing.
 
-Drupal's standard install ships a *Document* media type with a
-`field_media_document` file field. Reuse it (don't create a duplicate
-type — that yields two file widgets and a *"Document field is required"*
-error). Edit it at `/admin/structure/media/manage/document` → Manage
-fields → `field_media_document` → **Allowed file extensions**:
+### 12.2 Allow document extensions on the Document media type
+
+Drupal's standard install ships a *Document* media type. Edit
+`field_media_document` at `/admin/structure/media/manage/document` →
+**Manage fields** → *Document file* → **Allowed file extensions**:
 
 ```
 pdf md markdown rst org adoc asciidoc txt log yaml yml ini conf toml
 ```
 
-Then add a **Media** reference field to Article at
-`/admin/structure/types/manage/article/fields/add-field`, type
-*Reference → Media*, allowing the *Document* bundle. Or upload directly
-via `/media/add/document` and reference the Media entity from a node body
-embed.
+Save.
 
-### 12.3 Wire the index
+> Don't create a *second* Document media type — the form ends up with
+> two file widgets and submission fails with *"Document field is required"*.
 
-Go to `/admin/config/search/search-api/index/content/processors` and
-enable **File attachments** (provided by `search_api_attachments`). Save.
+### 12.3 Enable the File attachments processor on the index
 
-Then on `/admin/config/search/search-api/index/content/fields` → **Add
-fields** → expand the file field → add the extracted text property
-(usually labelled *File contents* or *Whole file entity*) as **Fulltext**.
-Set its **AI Search indexing option** to **Main content** (or
-**Contextual content**). Save.
+Go to `/admin/config/search/search-api/index/content/processors`, tick
+**File attachments**, save.
 
-> If the field is left as **Ignore**, text gets extracted but never
-> embedded, and semantic queries silently miss those documents.
+The *File contents* field you added in §6.3 now starts producing extracted
+text on save. (If you didn't add it earlier, do it now: *Fields → Add
+fields → File datasource → "the file" → File contents*, type Fulltext,
+indexing option **Main content**.)
 
-### 12.4 Upload and reindex
+### 12.4 Upload and verify
 
-Upload a PDF, Markdown file, or `.txt` to a Document media item (or
-directly to the Article via the file field), then trigger indexing:
+Go to `/media/add/document` (Content → Media → Add media → Document) and
+upload any PDF, Markdown, or `.txt` file. Save.
+
+With Search API's default `index_directly: TRUE`, embedding happens on
+save — no manual reindex needed for routine uploads. Force a full reset
+only when you change extractor / fields / models:
 
 ```bash
-ddev drush search-api:reset-tracker content
-ddev drush search-api:index content
+ddev drush search-api:status content    # tracks % indexed
+ddev drush search-api:index content     # flush the queue (cron does this on schedule)
 ```
 
-You can verify both flows landed in Elasticsearch:
+Verify both flows landed in Elasticsearch:
 
 ```bash
 source ../elastic-start-local/.env
@@ -759,13 +849,37 @@ ddev drush ev '\Drupal::configFactory()
 ```
 Pure kNN works on the basic / free license.
 
-**I created an Article but its body isn't in Elasticsearch**
-The default index in this tutorial is over `entity:node` (Article bundle)
-*and* `entity:file`. If you scaffolded with an older configuration that
-only had `entity:file`, add `entity:node` as a second datasource at
-`/admin/config/search/search-api/index/content/edit`, add **Title** and
-**Body** fields, mark them *Contextual content* / *Main content* in the
-AI Search column, and reindex.
+**A document I uploaded via Media isn't searchable / an Article body isn't searchable**
+The index needs **both** `entity:node` (Article) and `entity:file` datasources — see §6.2. Edit at `/admin/config/search/search-api/index/content/edit`, tick whichever is missing, add the matching fields on the *Fields* tab (Title/Body for nodes; Filename + the processor-added *File contents* for files), set the AI Search indexing option on each, then run `ddev drush search-api:reset-tracker content && ddev drush search-api:index content`. To repair the node side from drush in one shot:
+
+```bash
+ddev drush ev '
+use Drupal\search_api\Entity\Index;
+use Drupal\search_api\Item\Field;
+$index = Index::load("content");
+$ds = \Drupal::service("search_api.plugin_helper")
+  ->createDatasourcePlugin($index, "entity:node", [
+    "bundles"   => ["default" => 0, "selected" => ["article"]],
+    "languages" => ["default" => 1, "selected" => []],
+  ]);
+$index->addDatasource($ds);
+foreach ([["node_title","title","string"],["node_body","body","text"]] as [$id,$path,$type]) {
+  if (!$index->getField($id)) {
+    $f = new Field($index, $id);
+    $f->setDatasourceId("entity:node"); $f->setPropertyPath($path);
+    $f->setType($type); $f->setLabel(ucfirst($path));
+    $index->addField($f);
+  }
+}
+$index->save();
+\Drupal::configFactory()->getEditable("ai_search.index.content")
+  ->set("indexing_options", \Drupal::config("ai_search.index.content")->get("indexing_options")
+    + ["node_title" => ["indexing_option" => "contextual_content"],
+       "node_body"  => ["indexing_option" => "main_content"]])
+  ->save();
+'
+ddev drush search-api:reset-tracker content && ddev drush search-api:index content
+```
 
 **Content exists but RAG still returns no useful results**
 Check `/admin/config/search/search-api/index/content/fields` and make sure:
@@ -786,14 +900,24 @@ source ../elastic-start-local/.env && curl -u "elastic:${ES_LOCAL_PASSWORD}" -X 
 ddev drush search-api:reset-tracker content && ddev drush search-api:index content
 ```
 
-**No embedding model available in LiteLLM**
-The VDB provider requires an embedding model (e.g. `text-embedding-3-small` via OpenAI, or a local `nomic-embed-text` via Ollama). Verify with:
+**No embedding model available in your AI provider**
+The VDB provider requires an embedding model (e.g. `text-embedding-nomic-embed-text-v1.5` via LM Studio, `text-embedding-3-small` via OpenAI, or `nomic-embed-text` via Ollama). For LM Studio:
 ```bash
-curl http://localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_API_KEY" | jq '.data[].id'
+curl -s http://localhost:1234/v1/models | jq '.data[].id' | grep embed
 ```
+If the list is empty, load an embedding model from LM Studio's **Discover** tab.
 
-**Agent uses `articles` instead of `drupal_content` as index**
-The Property setup UI doesn't save reliably. Ensure the instructions explicitly name `drupal_content` and the Force value is set in Property setup.
+**Agent uses the wrong index name (e.g. `articles`, `drupal_content`, or anything other than `content`)**
+The RAG tool's `index` parameter is the **Search API** index machine name (`content`), not the Elasticsearch index name. If the Property setup UI doesn't save reliably, set it from drush:
+
+```bash
+ddev drush ev '
+$agent = \Drupal\ai_agents\Entity\AiAgent::load("content_assistant");
+$limits = $agent->get("tool_usage_limits") ?? [];
+$limits["ai_search:rag_search"] = ["index" => ["action" => "force_value", "hide_property" => 1, "values" => ["content"]]];
+$agent->set("tool_usage_limits", $limits)->save();
+'
+```
 
 **Agent returns `{{artifact:ai_search_rag_search:1}}`**
 Uncheck **Use Artifact storage** in the agent's RAG/Vector Search tool settings.
@@ -806,11 +930,17 @@ Re-enable **Return directly** on the RAG/Vector Search tool.
 ddev composer config minimum-stability alpha && ddev composer config prefer-stable true
 ```
 
-**LiteLLM not reachable from DDEV (Linux)**
+**LM Studio (or LiteLLM/Ollama) not reachable from DDEV (Linux)**
 ```bash
 ddev exec ip route | grep default | awk '{print $3}'
 ```
-Use that IP for the LiteLLM host in the provider settings — `host.docker.internal` only works on Mac/Windows.
+Use that bridge IP for the host in `/admin/config/ai/providers/lmstudio` — `host.docker.internal` only works on Mac/Windows.
+
+**Drupal logs `Could not load the LM Studio API key` on every request**
+Harmless. The AI module's base provider class always tries to look up an `api_key` config value, but LM Studio doesn't need one. The request still completes successfully. To silence the noise, create a dummy Key entity (`/admin/config/system/keys/add` → key value `none`) and set `ai_provider_lmstudio.settings.api_key` to its ID via drush.
+
+**LM Studio chat returns reasoning_content but empty content / finish_reason=length**
+You picked a reasoning-trained model (e.g. `mistralai/ministral-3-14b-reasoning`) and it consumed the entire token budget on its `<think>` block. Pick a non-reasoning model like `google/gemma-4-e4b` or `qwen/qwen3-32b` for tool-calling, or raise `max_tokens` significantly.
 
 **DDEV project named incorrectly**
 Run from inside `drupal-ai-agent`:
@@ -830,6 +960,7 @@ ddev config --project-type=drupal11 --docroot=web && ddev start
 | Start DDEV | `ddev start` |
 | Stop DDEV | `ddev stop` |
 | Restart DDEV | `ddev restart` |
+| Check index progress | `ddev drush search-api:status content` |
 | Reindex | `ddev drush search-api:reset-tracker content && ddev drush search-api:index content` |
 | Check ES indices | `source ../elastic-start-local/.env && curl -u "elastic:${ES_LOCAL_PASSWORD}" "http://localhost:9200/_cat/indices?v" \| grep drupal` |
 | Check ES health | `source ../elastic-start-local/.env && curl -u "elastic:${ES_LOCAL_PASSWORD}" "http://localhost:9200/_cluster/health?pretty"` |
