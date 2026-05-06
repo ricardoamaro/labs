@@ -29,23 +29,26 @@ Verify all prerequisites:
 docker --version && ddev version && git --version && curl --version
 ```
 
-### LM Studio models used in this tutorial
+### Pick an AI provider and load the right models
 
-Open LM Studio → **Models** and load at least one chat model and one embedding model. Recommended:
+You need **one chat model** (preferably one that emits OpenAI-style function calls reliably) **and one embedding model**. Recommended pairings, by provider:
 
-| Role | Model | Why |
-|---|---|---|
-| Chat / agent | `qwen/qwen3-32b` (or `qwen3.6-35b-a3b` MoE if you have it) | Strong tool-calling, OpenAI-compatible function calls work reliably |
-| Chat (lighter) | `openai/gpt-oss-20b` or `google/gemma-3-27b` | Fits in less VRAM if 30B+ is too heavy |
-| Embeddings | `text-embedding-nomic-embed-text-v1.5` (768 dims) | Battle-tested, fast, good multilingual coverage |
+| Provider | Chat model | Embedding model | Notes |
+|---|---|---|---|
+| **LM Studio** (used as the worked example below) | `qwen/qwen3-32b`, `openai/gpt-oss-20b`, or `google/gemma-3-27b` | `text-embedding-nomic-embed-text-v1.5` (768 dims) | Free, local, OpenAI-compatible API on port `1234` |
+| **LiteLLM** | any OpenAI/Gemini/Anthropic model the proxy fronts (e.g. `gemini-flash-latest`) | `text-embedding-3-small` (1536) or `gemini-embedding-001` (3072) | Proxy on port `4000`, requires a `LITELLM_API_KEY` |
+| **Ollama** | `qwen2.5:32b`, `llama3.3:70b` | `nomic-embed-text:v1.5` (768) | Local, port `11434` |
+| **OpenAI direct** | `gpt-4o-mini` or `gpt-5` | `text-embedding-3-small` (1536) | Cloud, requires API key |
 
-Start the LM Studio server (Developer tab → **Start Server**) and verify it returns models:
+> Tool-calling reliability matters more than parameter count. Qwen 3, gpt-oss, and recent Gemma instruction-tuned models all behave well; reasoning-only models (e.g. `mistralai/ministral-3-14b-reasoning`) often consume the entire token budget on `<think>` and never emit a tool call.
+
+Start your provider's server and verify it returns models. For LM Studio (Developer tab → **Start Server**):
 
 ```bash
 curl -s http://localhost:1234/v1/models | jq '.data[].id'
 ```
 
-You should see your loaded chat and embedding models in the list.
+For LiteLLM: `curl -s http://localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_API_KEY"`. For Ollama: `curl -s http://localhost:11434/v1/models`. You should see at least one chat and one embedding model in the list.
 
 ---
 
@@ -229,47 +232,69 @@ Save — confirm no connection error is shown.
 
 ---
 
-## Section 5: Configure the LM Studio Provider (or any OpenAI-compatible AI provider)
+## Section 5: Configure your AI Provider
 
-This tutorial uses [LM Studio](https://lmstudio.ai/), which exposes an OpenAI-compatible API on port `1234` by default. The same flow works for LiteLLM (`drupal/ai_provider_litellm`), Ollama (`drupal/ai_provider_ollama`), or OpenAI itself (`drupal/ai_provider_openai`) — only the module name and port differ.
+This tutorial uses [LM Studio](https://lmstudio.ai/) as the worked example because it's free, local, and exposes an OpenAI-compatible API on `localhost:1234` out of the box. The exact same Drupal-side flow works for **LiteLLM**, **Ollama**, and **OpenAI direct** — only the module name (already chosen in §2.2), endpoint, and whether an API key is required differ. Substitute as needed:
 
-### 5.1 Verify LM Studio is running and exposes the right models
+| Provider | Drupal module | Default endpoint | API key? |
+|---|---|---|---|
+| LM Studio | `drupal/ai_provider_lmstudio` | `http://host.docker.internal:1234` | none |
+| LiteLLM | `drupal/ai_provider_litellm` | `http://host.docker.internal:4000` | yes (`LITELLM_API_KEY`) |
+| Ollama | `drupal/ai_provider_ollama` | `http://host.docker.internal:11434` | none |
+| OpenAI direct | `drupal/ai_provider_openai` | `https://api.openai.com` | yes (`OPENAI_API_KEY`) |
 
-In the **LM Studio app**, open the **Developer** tab and click **Start Server**. Then:
+> On Linux, replace `host.docker.internal` with the Docker bridge IP from §3.1.
+
+### 5.1 Verify the endpoint is reachable
+
+Hit the provider's `/v1/models` endpoint and confirm at least one chat model **and** one embedding model are returned.
 
 ```bash
+# LM Studio (Developer tab → Start Server first):
 curl -s http://localhost:1234/v1/models | jq '.data[].id'
+
+# LiteLLM:
+curl -s http://localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_API_KEY" | jq '.data[].id'
+
+# Ollama:
+curl -s http://localhost:11434/v1/models | jq '.data[].id'
 ```
 
-You must see at least one chat model (e.g. `google/gemma-4-e4b`, `qwen/qwen3-32b`) **and** one embedding model (e.g. `text-embedding-nomic-embed-text-v1.5`). The VDB provider uses the embedding model to generate dense vectors at index time and at query time.
+The VDB provider uses the embedding model to generate dense vectors at index time and at query time, so an embedding model **must** be present in the list.
 
-> Some MLX-backend chat models on Apple Silicon can fail to load with `dlopen ... libpython3.11.dylib not found`. If a model loads in LM Studio's chat UI but breaks via the API, swap to a model that uses LM Studio's llama.cpp backend (most non-MLX GGUF models) or reinstall the MLX runtime from LM Studio's Settings → Runtimes.
+> **LM Studio + Apple Silicon gotcha:** some MLX-backend chat models fail to load with `dlopen ... libpython3.11.dylib not found`. If a model loads in LM Studio's chat UI but breaks via the API, swap to a model that uses LM Studio's llama.cpp backend (most non-MLX GGUF models) or reinstall the MLX runtime from LM Studio's Settings → Runtimes.
 
-### 5.2 Configure the provider (no API key needed for LM Studio)
+### 5.2 Configure the provider in Drupal
 
-LM Studio doesn't require an API key by default, so skip the Key entity step. Go to `/admin/config/ai/providers/lmstudio`:
+**For providers that need an API key (LiteLLM, OpenAI direct):** create a Key entity first at `/admin/config/system/keys/add` with the API key as the value, then go to `/admin/config/ai/providers/<provider>` and select that key in the **API Key** field.
+
+**For providers without auth (LM Studio, Ollama):** skip the Key entity step entirely and just fill in the host fields.
+
+For LM Studio specifically, go to `/admin/config/ai/providers/lmstudio`:
 
 | Field | Value |
 |---|---|
-| Host Name | `http://host.docker.internal` (Mac/Win) or the bridge IP from Section 3.1 (Linux) |
+| Host Name | `http://host.docker.internal` (Mac/Win) or the bridge IP from §3.1 (Linux) |
 | Port | `1234` |
 
-Save. (You may see a one-time `Could not load the LM Studio API key` notice in `drush watchdog:show` — this is harmless, the AI module logs it whenever a provider is queried without auth and LM Studio doesn't need any.)
+Save. (You may see a one-time `Could not load the LM Studio API key` notice in `drush watchdog:show` — harmless. The AI module's base class always tries to look up an `api_key` config value, but LM Studio and Ollama don't need one.)
 
 ### 5.3 Set sensible defaults so other modules pick the right model
+
+The Search API backend, the AI Agent, and the kNN search query all need to know which provider/model combo to use. Set the defaults once:
 
 ```bash
 ddev drush ev '
 $config = \Drupal::configFactory()->getEditable("ai.settings");
 $config->set("default_providers", [
-  "chat" => ["provider_id" => "lmstudio", "model_id" => "google/gemma-4-e4b"],
-  "embeddings" => ["provider_id" => "lmstudio", "model_id" => "text-embedding-nomic-embed-text-v1.5"],
+  "chat"            => ["provider_id" => "lmstudio", "model_id" => "google/gemma-3-27b"],
+  "embeddings"      => ["provider_id" => "lmstudio", "model_id" => "text-embedding-nomic-embed-text-v1.5"],
   "chat_with_tools" => ["provider_id" => "lmstudio", "model_id" => "qwen/qwen3-32b"],
 ])->save();
 '
 ```
 
-Replace the model IDs with whatever LM Studio reports under `/v1/models`. The `chat_with_tools` model must reliably emit OpenAI-style function calls — Qwen 3, gpt-oss-20b, and recent Gemma instruction-tuned models all work; reasoning-only models often consume their token budget on `<think>` and never emit a tool call.
+Substitute `provider_id` (`lmstudio`, `litellm`, `ollama`, `openai`) and `model_id` for whatever your `/v1/models` call returned. The `chat_with_tools` model must reliably emit OpenAI-style function calls — Qwen 3, gpt-oss, recent Gemma instruction-tuned models, and the OpenAI / Anthropic / Gemini hosted models all work.
 
 ---
 
@@ -288,8 +313,8 @@ Under **Configure AI Search backend**:
 
 | Field | Value |
 |---|---|
-| Embeddings Engine | your LM Studio embedding model, e.g. `LM Studio \| text-embedding-nomic-embed-text-v1.5` |
-| Tokenizer chat counting model | your LM Studio chat model, e.g. `LM Studio \| google/gemma-4-e4b` |
+| Embeddings Engine | your provider's embedding model — e.g. `LM Studio \| text-embedding-nomic-embed-text-v1.5`, `LiteLLM Proxy \| gemini-embedding-001`, `Ollama \| nomic-embed-text:v1.5` |
+| Tokenizer chat counting model | your provider's chat model — e.g. `LM Studio \| google/gemma-3-27b`, `LiteLLM Proxy \| gemini-flash-latest` |
 | Vector Database | `Elasticsearch (Native kNN)` |
 
 Under **Vector Database Configuration** (appears after selecting Elasticsearch):
@@ -549,7 +574,7 @@ echo "Created agent: " . $agent->id() . PHP_EOL;
 
 ## Section 10: Test the Agent
 
-Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, and choose a model. For LM Studio pick the chat-with-tools model you set in Section 5.3 (e.g. `LM Studio | qwen/qwen3-32b`).
+Go to `/admin/config/ai/agents/explore`, select **Content Assistant**, and choose a model — pick the `chat_with_tools` model you set in §5.3 (e.g. `LM Studio | qwen/qwen3-32b`, `LiteLLM Proxy | gemini-flash-latest`, etc.).
 
 **Keyword test:**
 > "What articles do we have about GDPR compliance?"
@@ -602,7 +627,7 @@ Go to `/admin/config/ai/agents/add` and create a second agent:
 |---|---|
 | Label | `Relevance Grader` |
 | Machine name | `relevance_grader` |
-| AI Provider | LM Studio (use the lightest chat model you have, e.g. `google/gemma-4-e4b`) |
+| AI Provider | the same provider as your Content Assistant — pick the **lightest** chat model you have available (e.g. `google/gemma-4-e4b`, `gemini-flash-lite`, `gpt-4o-mini`); the grader only emits one word so a small model is fine and saves tokens |
 
 **Instructions:**
 
@@ -901,11 +926,16 @@ ddev drush search-api:reset-tracker content && ddev drush search-api:index conte
 ```
 
 **No embedding model available in your AI provider**
-The VDB provider requires an embedding model (e.g. `text-embedding-nomic-embed-text-v1.5` via LM Studio, `text-embedding-3-small` via OpenAI, or `nomic-embed-text` via Ollama). For LM Studio:
+The VDB provider requires an embedding model: `text-embedding-nomic-embed-text-v1.5` via LM Studio, `text-embedding-3-small` via OpenAI / LiteLLM, `nomic-embed-text:v1.5` via Ollama. List what your provider exposes:
 ```bash
-curl -s http://localhost:1234/v1/models | jq '.data[].id' | grep embed
+# LM Studio:
+curl -s http://localhost:1234/v1/models | jq '.data[].id' | grep -i embed
+# LiteLLM:
+curl -s http://localhost:4000/v1/models -H "Authorization: Bearer $LITELLM_API_KEY" | jq '.data[].id' | grep -i embed
+# Ollama:
+curl -s http://localhost:11434/v1/models | jq '.data[].id' | grep -i embed
 ```
-If the list is empty, load an embedding model from LM Studio's **Discover** tab.
+If the list is empty, load an embedding model from your provider's UI (LM Studio's **Discover** tab, `ollama pull nomic-embed-text`, or add the model to your `litellm.config.yaml`).
 
 **Agent uses the wrong index name (e.g. `articles`, `drupal_content`, or anything other than `content`)**
 The RAG tool's `index` parameter is the **Search API** index machine name (`content`), not the Elasticsearch index name. If the Property setup UI doesn't save reliably, set it from drush:
@@ -930,17 +960,17 @@ Re-enable **Return directly** on the RAG/Vector Search tool.
 ddev composer config minimum-stability alpha && ddev composer config prefer-stable true
 ```
 
-**LM Studio (or LiteLLM/Ollama) not reachable from DDEV (Linux)**
+**AI provider (LM Studio / LiteLLM / Ollama) not reachable from DDEV (Linux)**
 ```bash
 ddev exec ip route | grep default | awk '{print $3}'
 ```
-Use that bridge IP for the host in `/admin/config/ai/providers/lmstudio` — `host.docker.internal` only works on Mac/Windows.
+Use that bridge IP for the host in `/admin/config/ai/providers/<provider>` — `host.docker.internal` only works on Mac/Windows.
 
-**Drupal logs `Could not load the LM Studio API key` on every request**
-Harmless. The AI module's base provider class always tries to look up an `api_key` config value, but LM Studio doesn't need one. The request still completes successfully. To silence the noise, create a dummy Key entity (`/admin/config/system/keys/add` → key value `none`) and set `ai_provider_lmstudio.settings.api_key` to its ID via drush.
+**Drupal logs `Could not load the <provider> API key` on every request**
+Harmless when using a provider that doesn't need auth (LM Studio, Ollama). The AI module's base provider class always tries to look up an `api_key` config value, but the request still completes successfully. To silence the noise, create a dummy Key entity (`/admin/config/system/keys/add` → key value `none`) and set `ai_provider_<provider>.settings.api_key` to its ID via drush.
 
-**LM Studio chat returns reasoning_content but empty content / finish_reason=length**
-You picked a reasoning-trained model (e.g. `mistralai/ministral-3-14b-reasoning`) and it consumed the entire token budget on its `<think>` block. Pick a non-reasoning model like `google/gemma-4-e4b` or `qwen/qwen3-32b` for tool-calling, or raise `max_tokens` significantly.
+**Chat returns `reasoning_content` but empty `content` / `finish_reason=length`**
+You picked a reasoning-trained model (e.g. `mistralai/ministral-3-14b-reasoning`, OpenAI o1) and it consumed the entire token budget on its `<think>` block. Pick a non-reasoning model like `google/gemma-3-27b`, `qwen/qwen3-32b`, or `gpt-4o-mini` for tool-calling, or raise `max_tokens` significantly.
 
 **DDEV project named incorrectly**
 Run from inside `drupal-ai-agent`:
