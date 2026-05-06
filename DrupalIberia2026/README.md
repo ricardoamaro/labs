@@ -167,7 +167,7 @@ source ../elastic-start-local/.env
 echo $ES_LOCAL_API_KEY
 ```
 
-Open the Drupal instalation in the browser (Eg. `http://drupal-ai-agent.ddev.site:33000`)
+Open the Drupal installation in the browser (e.g. `http://drupal-ai-agent.ddev.site:33000`).
 
 Go to `/admin/config/system/keys/add` and create a key:
 
@@ -279,36 +279,35 @@ Go to `/admin/config/search/search-api/add-index`:
 |---|---|
 | Index name | `Content` |
 | Machine name | `content` — with prefix `drupal_` the ES index will be `drupal_content` |
-| Datasources | `Content` → Article bundle only |
+| Datasources | ✅ `Content` (Article bundle only) **and** ✅ `File` |
 | Server | `Elasticsearch` |
 
-### 6.3 Add fields
+> **Why two datasources?** Article bodies live on the node entity and
+> file content (PDF / Markdown text extracted by Search API Attachments)
+> lives on the file entity. Adding both makes the same index serve
+> editorial pages and document uploads — the chatbot in Section 10 then
+> retrieves either path identically. With only `Content`, anything you
+> upload via `/media/add/document` in §12 will never reach Elasticsearch.
 
-Go to `/admin/config/search/search-api/index/content/fields` → Add:
+### 6.3 Add fields and mark them for AI Search
 
-| Field | Type |
-|---|---|
-| Title | **Fulltext** |
-| Body | **Fulltext** |
-| Content type | String |
-| Published | Boolean |
+Go to `/admin/config/search/search-api/index/content/fields` → **Add fields**.
+Each row also has an **AI Search indexing option** column — set both at
+the same time:
 
-Save changes. The module will create the Elasticsearch index automatically on the first full index run.
-
-### 6.3.1 Mark each Search API field for AI Search explicitly
-
-This step is required for vector search. Adding fields to the Search API index is not enough by itself.
-
-On the same `/admin/config/search/search-api/index/content/fields` page, each field has an **AI Search indexing option** column. Set:
-
-| Label | Machine name | Type | Indexing option |
+| Field | Datasource | Type | AI Search indexing option |
 |---|---|---|---|
-| Body | `body` | Fulltext | **Main content** |
-| Title | `title` | Fulltext | **Contextual content** |
-| Content type | `type` | String | **Filterable Attributes** |
-| Published | `status` | Boolean | **Filterable Attributes** |
+| Title | Content | Fulltext | **Contextual content** |
+| Body | Content | Fulltext | **Main content** |
+| Content type | Content | String | **Filterable Attributes** |
+| Published | Content | Boolean | **Filterable Attributes** |
+| Filename | File | String | **Contextual content** |
+| File contents *(added by the **File attachments** processor — see §12)* | — | Fulltext | **Main content** |
 
-The form will not save until every field has an option selected — **Ignore** is a valid choice if you want to exclude a field from vector retrieval.
+The form will not save until every field has an indexing option set —
+**Ignore** is a valid choice if you want to exclude a field from vector
+retrieval. Save changes; the module creates the Elasticsearch index
+automatically on the first full index run.
 
 ---
 
@@ -349,11 +348,13 @@ Verify vectors are indexed by running a kNN search. On **Elasticsearch 9.x**, th
 
 ```bash
 source ../elastic-start-local/.env
-# Generate an embedding from LiteLLM (replace model and key as needed)
+# Generate a query embedding from LiteLLM. $LITELLM_API_BASE / $LITELLM_API_KEY
+# come from your LiteLLM .env; swap the model if you're using something other
+# than gemini-embedding-001.
 EMB=$(curl -s -H "Authorization: Bearer $LITELLM_API_KEY" \
-  "http://YOUR_LITELLM_HOST:4000/v1/embeddings" \
+  "$LITELLM_API_BASE/v1/embeddings" \
   -H "Content-Type: application/json" \
-  -d '{"model": "YOUR_EMBEDDING_MODEL", "input": "GDPR compliance"}' | \
+  -d '{"model": "gemini-embedding-001", "input": "GDPR compliance"}' | \
   python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin)['data'][0]['embedding']))")
 
 # Run kNN search
@@ -573,49 +574,54 @@ Go to `/admin/config/search/search-api-attachments` and set:
 
 Save.
 
-### 12.2 Add a Document media field to Article
+> **If `PHP PdfParser` isn't in the Extraction method dropdown**, the
+> alpha you installed predates the bundled extractor. Two options:
+> (a) update to a newer alpha — `ddev composer update drupal/ai_vdb_provider_elasticsearch`;
+> or (b) fall back to `Pdftotext Extractor` and install poppler-utils
+> in the web container — `ddev exec sudo apt-get update && sudo apt-get install -y poppler-utils`.
+> The pure-PHP path is the recommended one but pdftotext works just as
+> well for indexing.
 
-Drupal's standard install ships a *Document* media type with a
-`field_media_document` file field. Reuse it (don't create a duplicate
-type — that yields two file widgets and a *"Document field is required"*
-error). Edit it at `/admin/structure/media/manage/document` → Manage
-fields → `field_media_document` → **Allowed file extensions**:
+### 12.2 Allow document extensions on the Document media type
+
+Drupal's standard install ships a *Document* media type. Edit
+`field_media_document` at `/admin/structure/media/manage/document` →
+**Manage fields** → *Document file* → **Allowed file extensions**:
 
 ```
 pdf md markdown rst org adoc asciidoc txt log yaml yml ini conf toml
 ```
 
-Then add a **Media** reference field to Article at
-`/admin/structure/types/manage/article/fields/add-field`, type
-*Reference → Media*, allowing the *Document* bundle. Or upload directly
-via `/media/add/document` and reference the Media entity from a node body
-embed.
+Save.
 
-### 12.3 Wire the index
+> Don't create a *second* Document media type — the form ends up with two
+> file widgets and submission fails with *"Document field is required"*.
 
-Go to `/admin/config/search/search-api/index/content/processors` and
-enable **File attachments** (provided by `search_api_attachments`). Save.
+### 12.3 Enable the File attachments processor on the index
 
-Then on `/admin/config/search/search-api/index/content/fields` → **Add
-fields** → expand the file field → add the extracted text property
-(usually labelled *File contents* or *Whole file entity*) as **Fulltext**.
-Set its **AI Search indexing option** to **Main content** (or
-**Contextual content**). Save.
+Go to `/admin/config/search/search-api/index/content/processors`, tick
+**File attachments**, save.
 
-> If the field is left as **Ignore**, text gets extracted but never
-> embedded, and semantic queries silently miss those documents.
+The *File contents* field you added in §6.3 now starts producing extracted
+text on save. (If you didn't add it earlier, do it now: *Fields → Add
+fields → File datasource → "the file" → File contents*, type Fulltext,
+indexing option **Main content**.)
 
-### 12.4 Upload and reindex
+### 12.4 Upload and verify
 
-Upload a PDF, Markdown file, or `.txt` to a Document media item (or
-directly to the Article via the file field), then trigger indexing:
+Go to `/media/add/document` (Content → Media → Add media → Document) and
+upload any PDF, Markdown, or `.txt` file. Save.
+
+With Search API's default `index_directly: TRUE`, embedding happens on
+save — no manual reindex needed for routine uploads. Force a full reset
+only when you change extractor / fields / models:
 
 ```bash
-ddev drush search-api:reset-tracker content
-ddev drush search-api:index content
+ddev drush search-api:status content    # tracks % indexed
+ddev drush search-api:index content     # flush the queue (cron does this on schedule)
 ```
 
-You can verify both flows landed in Elasticsearch:
+Verify both flows landed in Elasticsearch:
 
 ```bash
 source ../elastic-start-local/.env
@@ -759,13 +765,14 @@ ddev drush ev '\Drupal::configFactory()
 ```
 Pure kNN works on the basic / free license.
 
-**I created an Article but its body isn't in Elasticsearch**
-The default index in this tutorial is over `entity:node` (Article bundle)
-*and* `entity:file`. If you scaffolded with an older configuration that
-only had `entity:file`, add `entity:node` as a second datasource at
-`/admin/config/search/search-api/index/content/edit`, add **Title** and
-**Body** fields, mark them *Contextual content* / *Main content* in the
-AI Search column, and reindex.
+**A document I uploaded via Media isn't searchable / an Article body isn't searchable**
+The index needs **both** `entity:node` (Article) and `entity:file`
+datasources — see §6.2. Edit at
+`/admin/config/search/search-api/index/content/edit`, tick whichever is
+missing, add the matching fields on the *Fields* tab (Title/Body for
+nodes; Filename + the processor-added File contents for files), set the
+AI Search indexing option on each, then run
+`ddev drush search-api:reset-tracker content && ddev drush search-api:index content`.
 
 **Content exists but RAG still returns no useful results**
 Check `/admin/config/search/search-api/index/content/fields` and make sure:
@@ -830,6 +837,7 @@ ddev config --project-type=drupal11 --docroot=web && ddev start
 | Start DDEV | `ddev start` |
 | Stop DDEV | `ddev stop` |
 | Restart DDEV | `ddev restart` |
+| Check index progress | `ddev drush search-api:status content` |
 | Reindex | `ddev drush search-api:reset-tracker content && ddev drush search-api:index content` |
 | Check ES indices | `source ../elastic-start-local/.env && curl -u "elastic:${ES_LOCAL_PASSWORD}" "http://localhost:9200/_cat/indices?v" \| grep drupal` |
 | Check ES health | `source ../elastic-start-local/.env && curl -u "elastic:${ES_LOCAL_PASSWORD}" "http://localhost:9200/_cluster/health?pretty"` |
