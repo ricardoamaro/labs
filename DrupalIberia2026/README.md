@@ -987,5 +987,6 @@ docker volume prune -f && docker image prune -f
 - [Elasticsearch dense_vector Documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/dense-vector.html)
 - [Elasticsearch kNN search](https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html)
 - [DDEV Documentation](https://ddev.readthedocs.io/)
+- [LM Studio](https://lmstudio.ai/)
 - [LiteLLM Documentation](https://docs.litellm.ai/)
 - [MCP Server Module](https://www.drupal.org/project/mcp_server)
