@@ -30,7 +30,7 @@ to the cloud.
 | Layer      | Tool                          |
 |------------|-------------------------------|
 | Embeddings | Ollama `qwen3-embedding`     |
-| Chat       | Ollama `qwen3.5` (configurable) |
+| Chat       | Ollama `qwen3.6` (configurable) |
 | Vector DB  | Chroma                        |
 | UI         | Streamlit                     |
 
@@ -76,3 +76,32 @@ Set environment variables in `docker-compose.yml` to change models:
 
 All models are pulled into the `ollama` container. Once pulled, the lab works
 with no internet connection.
+
+## Models & lessons learned
+
+Verified locally on Docker 26 + Ollama (Linux). Models are pulled into the
+`ollama` container, not the host.
+
+| Role      | Default model            | Size   | Notes |
+|-----------|--------------------------|--------|-------|
+| Embedding | `qwen3-embedding`        | 4.7 GB | SOTA Ollama embedding model (MTEB). |
+| Chat      | `qwen3.6`                | 23 GB  | Default chat model; strong instruction-following. |
+| Alt chat  | `gemma4:26b-a4b-it-qat`  | 15 GB  | Works well through the RAG pipeline. |
+| Alt chat  | `gemma4:latest`          | 9.6 GB | Smaller Gemma 4 option. |
+
+Lessons:
+
+- **Ollama tag naming is strict.** The model you want is
+  `gemma4:26b-a4b-it-qat` (under the `gemma4` namespace), not
+  `gemma-4-26b-a4b-qat` — the latter returns "manifest file does not exist"
+  even though a search page exists for it. When a pull fails with that error,
+  the blob is not published yet; try a sibling tag or the `:latest` base.
+- **Large models take time.** `qwen3.6` (23 GB) and `gemma4:26b-a4b-it-qat`
+  (15 GB) exceed the 120 s default; pull them in the background
+  (`docker exec <ollama> ollama pull <model> &`) and poll `ollama list`.
+- **Inside the compose network, use service hostnames.** Ollama is
+  `http://ollama:11434` and Chroma is `http://chroma:8000` from the app
+  container — `localhost` will refuse the connection.
+- **Hybrid retrieval + citations** materially improved answer trust: every
+  claim carries a `[n]` marker resolvable to a filename + chunk + distance.
+
