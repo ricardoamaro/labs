@@ -8,9 +8,22 @@ to the cloud.
 ## What you build
 
 - A document store that lives on your own disk (Chroma).
-- An ingestion step that chunks your files and embeds them with a local model.
-- A chat UI that retrieves the most relevant chunks and asks a local LLM to
-  answer strictly from your context.
+- An ingestion step that chunks your files with structure awareness and embeds
+  them with a local model.
+- A chat UI that retrieves the most relevant chunks via **hybrid search**
+  (lexical + semantic), answers strictly from your context, and **cites its
+  sources** so you can verify every claim.
+
+## Features
+
+- **Hybrid retrieval** — Chroma fuses BM25 lexical search with vector search,
+  catching both exact keywords and semantic meaning.
+- **Structure-aware chunking** — splits on headings/paragraphs with overlap,
+  so chunks respect document shape instead of cutting mid-sentence.
+- **Inline citations** — answers carry `[n]` markers linking to the source
+  chunk, with an expandable panel showing filename, chunk index, retrieval
+  distance (a thin-context confidence hint), and the snippet.
+- **Per-document filter** — scope a question to a single file from the sidebar.
 
 ## Stack
 
@@ -48,12 +61,16 @@ Set environment variables in `docker-compose.yml` to change models:
 
 ## How it works
 
-1. `ingest()` reads `./docs`, splits each file into ~800-char chunks, and
-   upserts them into Chroma with Ollama embeddings.
-2. `answer()` queries Chroma for the 4 nearest chunks, packs them as context,
-   and calls the local LLM with a strict "use only the context" prompt.
-3. The LLM never sees anything outside the retrieved context, so answers stay
-   grounded in your data.
+1. `ingest()` reads `./docs`, splits each file into structure-aware chunks
+   (~800 chars, 100-char overlap, heading/paragraph boundaries), and upserts
+   them into Chroma with `filename`, `chunk_index`, `doc_type`, and
+   `ingested_at` metadata.
+2. `retrieve()` runs Chroma **hybrid** search (lexical + vector) for the top-8
+   chunks, optionally scoped by the filename filter.
+3. `answer()` packs the chunks as numbered context and calls the local LLM with
+   a strict "use only the context, cite with [n]" prompt.
+4. The LLM never sees anything outside the retrieved context, so answers stay
+   grounded in your data and every claim is traceable to a source.
 
 ## Offline note
 

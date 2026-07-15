@@ -1,4 +1,5 @@
 import os
+import re
 import hashlib
 import pathlib
 import textwrap
@@ -14,32 +15,86 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "qwen3-embedding")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen3.5")
 DOCS_DIR = os.getenv("DOCS_DIR", "/app/docs")
 COLLECTION = "lab_docs"
+CHUNK_CHARS = 800
+OVERLAP_CHARS = 100
+TOP_K = 8
 
-chroma_client = chromadb.HttpClient(host=CHROMA_BASE_URL.split("//")[-1].split(":")[0],
-                                    port=int(CHROMA_BASE_URL.split(":")[-1]))
+chroma_client = chromadb.HttpClient(
+    host=CHROMA_BASE_URL.split("//")[-1].split(":")[0],
+    port=int(CHROMA_BASE_URL.split(":")[-1]),
+)
 embed_fn = embedding_functions.OllamaEmbeddingFunction(
     url=f"{OLLAMA_BASE_URL}/api/embeddings",
     model_name=EMBED_MODEL,
 )
-collection = chroma_client.get_or_create_collection(name=COLLECTION, embedding_function=embed_fn)
+collection = chroma_client.get_or_create_collection(
+    name=COLLECTION, embedding_function=embed_fn
+)
+
+DOC_TYPES = {
+    ".txt": "text",
+    ".md": "markdown",
+    ".org": "org",
+    ".pdf": "pdf",
+    ".json": "json",
+}
 
 
-def _sha(path: pathlib.Path, text: str) -> str:
-    return hashlib.sha256(f"{path.name}:{text}".encode()).hexdigest()
+def _id(path: pathlib.Path, idx: int, text: str) -> str:
+    return hashlib.sha256(f"{path.name}:{idx}:{text}".encode()).hexdigest()
+
+
+def _split_structure(text: str):
+    parts = re.split(r"(?m)^(#{1,6}\s.*|$\n)", text)
+    blocks = [p for p in parts if p and not p.isspace()]
+    chunks, buf = [], ""
+    for block in blocks:
+        candidate = (buf + "\n" + block).strip()
+        if len(candidate) <= CHUNK_CHARS:
+            buf = candidate
+            continue
+        if buf:
+            chunks.append(buf)
+        buf = block.strip()
+    if buf:
+        chunks.append(buf)
+    merged, i = [], 0
+    while i < len(chunks):
+        cur = chunks[i]
+        while i + 1 < len(chunks) and len(cur) + len(chunks[i + 1]) <= CHUNK_CHARS:
+            cur += "\n" + chunks[i + 1]
+            i += 1
+        merged.append(cur)
+        i += 1
+    if OVERLAP_CHARS and merged:
+        out = []
+        for j, c in enumerate(merged):
+            if j > 0:
+                c = merged[j - 1][-OVERLAP_CHARS:] + "\n" + c
+            out.append(c)
+        merged = out
+    return merged
 
 
 def ingest() -> int:
     count = 0
     for path in pathlib.Path(DOCS_DIR).rglob("*"):
-        if not path.is_file():
-            continue
-        if path.suffix.lower() not in {".txt", ".md", ".org", ".pdf", ".json"}:
+        if not path.is_file() or path.suffix.lower() not in DOC_TYPES:
             continue
         text = path.read_text(errors="ignore")
-        chunks = textwrap.wrap(text, 800, break_long_words=False)
-        for chunk in chunks:
-            collection.upsert(ids=[_sha(path, chunk)], documents=[chunk])
-            count += 1
+        chunks = _split_structure(text)
+        metas = [
+            {
+                "filename": path.name,
+                "doc_type": DOC_TYPES[path.suffix.lower()],
+                "chunk_index": i,
+                "ingested_at": int(os.environ.get("INGEST_TS", "0")) or 0,
+            }
+            for i in range(len(chunks))
+        ]
+        ids = [_id(path, i, c) for i, c in enumerate(chunks)]
+        collection.upsert(ids=ids, documents=chunks, metadatas=metas)
+        count += len(chunks)
     return count
 
 
@@ -50,23 +105,41 @@ def ensure_models():
             ollama.pull(name)
 
 
-def answer(question: str) -> str:
-    results = collection.query(query_texts=[question], n_results=4)
-    context = "\n\n".join(results["documents"][0])
+def retrieve(question: str, filename: str | None):
+    where = {"filename": filename} if filename and filename != "All" else None
+    results = collection.query(
+        query_texts=[question],
+        n_results=TOP_K,
+        where=where,
+    )
+    docs = results["documents"][0]
+    metas = results["metadatas"][0]
+    dists = results["distances"][0]
+    return list(zip(docs, metas, dists))
+
+
+def answer(question: str, filename: str | None):
+    hits = retrieve(question, filename)
+    if not hits:
+        return "No relevant chunks found. Try ingesting docs or broadening the filter.", []
+    context = "\n\n".join(
+        f"[{i+1}] ({m['filename']}) {d}" for i, (d, m, _) in enumerate(hits)
+    )
     prompt = textwrap.dedent(f"""
         Answer the question using ONLY the context below.
+        Cite the supporting chunk with its [n] marker inline, e.g. "see [2]".
         If the context is insufficient, say you don't know.
         Context:
         {context}
         Question: {question}
     """)
     resp = ollama.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
-    return resp.message.content
+    return resp.message.content, hits
 
 
 st.set_page_config(page_title="Local RAG Notebook", layout="wide")
 st.title("Local RAG Notebook")
-st.caption(f"embed: {EMBED_MODEL} · chat: {CHAT_MODEL} · fully offline")
+st.caption(f"embed: {EMBED_MODEL} · chat: {CHAT_MODEL} · hybrid search · fully offline")
 
 with st.sidebar:
     st.header("Setup")
@@ -74,8 +147,12 @@ with st.sidebar:
         ensure_models()
         st.success("Models ready")
     if st.button("Ingest docs"):
+        os.environ["INGEST_TS"] = str(int(__import__("time").time()))
         n = ingest()
         st.success(f"Ingested {n} chunks from {DOCS_DIR}")
+    st.divider()
+    filenames = ["All"] + sorted({m["filename"] for m in collection.get()["metadatas"] or []})
+    st.session_state.filename_filter = st.selectbox("Filter by document", filenames)
 
 if "history" not in st.session_state:
     st.session_state.history = []
@@ -89,8 +166,13 @@ if q := st.chat_input("Ask your documents anything"):
     with st.chat_message("assistant"):
         with st.spinner("Thinking locally..."):
             try:
-                a = answer(q)
+                a, hits = answer(q, st.session_state.get("filename_filter", "All"))
             except Exception as e:  # noqa: BLE001
-                a = f"Error: {e}"
+                a, hits = f"Error: {e}", []
         st.write(a)
+        if hits:
+            with st.expander(f"Sources ({len(hits)} chunks retrieved)"):
+                for i, (d, m, dist) in enumerate(hits, 1):
+                    st.markdown(f"**[{i}] {m['filename']}** · chunk {m['chunk_index']} · distance {dist:.3f}")
+                    st.caption(d[:600] + ("…" if len(d) > 600 else ""))
     st.session_state.history.append(("assistant", a))
