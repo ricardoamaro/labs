@@ -107,14 +107,50 @@ Notes:
 - The shared `ollama-models` volume holds all pulled models; pull once.
 - Embedding model `qwen3-embedding` (4.7 GB) also offloads partially.
 
+## Benchmark harness status (tests/)
+
+- `tests/test_chunking.py` — 5 pure unit tests, PASS (no models needed).
+- `tests/benchmark.py` — runs each chat model over 8 Q&A, reports
+  retrieval_recall@8, citation_accuracy, faithfulness, latencies, tokens/s.
+- `tests/conftest.py` — stubs streamlit so app.py imports; wires compose
+  hostnames when LOCALRAG_COMPOSE=1.
+- The app's `answer()`/`ensure_models()` now use `ollama.Client(host=OLLAMA_BASE_URL)`
+  so they resolve the `ollama` service name inside the container.
+
+## Runtime findings on this APU (IMPORTANT)
+
+- A 9B model (qwen3.5:9b, 6.6 GB) DOES offload 34/34 layers to GPU
+  (`ollama ps` = 100% GPU), BUT the first generation is extremely slow on
+  the iGPU — one reply took ~9 minutes (GPU kernel/context warmup on the
+  Radeon 780M). Subsequent calls are faster but still impractical for a
+  8-question benchmark in one shot.
+- `qwen3:0.6b` (522 MB) runs on GPU and answers in ~12s including warmup.
+  Practical for the benchmark harness on this hardware.
+- Lesson: benchmark with a SMALL model (<=1B) on the APU; reserve 9B+
+  for spot checks. The 23 GB qwen3.6 fully crashes the machine via Ollama.
+- The Ollama Python client chat call can appear to "hang" — it is actually
+  the slow first-generation; give it minutes, not seconds. HTTP 500s in the
+  server log were client timeouts closing the connection, not server crashes.
+
+## How to run the benchmark here
+
+```
+# stack must be up (docker compose up -d)
+docker cp tests rag-app:/app/tests
+docker exec -e LOCALRAG_COMPOSE=1 rag-app python3 tests/benchmark.py \
+  --models qwen3:0.6b
+# results land in tests/results/benchmark_<ts>.json
+```
+
+Note: `rag-app` is recreated by `docker compose up`, wiping copied tests;
+re-copy after each `up`. Better: mount ./tests into the app service (TODO).
+
 ## Next
 
-- Update LocalRAG docker-compose.yml: `ollama` service uses
-  `ollama/ollama:rocm` + devices + group_add + env vars; mount the shared
-  `ollama-models` volume. Default CHAT_MODEL -> `qwen3.5:9b`.
-- Document the APU/GPU requirement in README (ROCm image, gfx override,
-  iGPU enable, group perms, model-size guidance).
-- Resume the benchmark harness work (tests/) that was paused for this.
+- Make the benchmark resilient: per-question timeout, run in background,
+  smaller default model for the APU.
+- Mount ./tests into rag-app via compose so no docker cp is needed.
+- Optionally add a chat-model selector to the UI.
 
 ## Next
 

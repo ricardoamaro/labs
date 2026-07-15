@@ -50,7 +50,18 @@ def streamlit_stub():
     so we register a no-op stub in sys.modules before importing app.
     """
     stub = types.ModuleType("streamlit")
-    stub.session_state = {}
+
+    class _SessionState(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(name)
+
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    stub.session_state = _SessionState()
     for name in (
         "set_page_config", "title", "caption", "sidebar", "header", "button",
         "success", "divider", "selectbox", "chat_message", "write", "chat_input",
@@ -58,13 +69,30 @@ def streamlit_stub():
     ):
         setattr(stub, name, lambda *a, **k: None)
     # Attribute-style access for `with st.sidebar:` etc.
-    stub.sidebar = types.SimpleNamespace(
-        header=lambda *a, **k: None,
-        button=lambda *a, **k: None,
-        success=lambda *a, **k: None,
-        divider=lambda *a, **k: None,
-        selectbox=lambda *a, **k: "All",
-    )
+    class _Ctx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Sidebar(_Ctx):
+        def header(self, *a, **k):
+            return None
+
+        def button(self, *a, **k):
+            return None
+
+        def success(self, *a, **k):
+            return None
+
+        def divider(self, *a, **k):
+            return None
+
+        def selectbox(self, *a, **k):
+            return "All"
+
+    stub.sidebar = _Sidebar()
     sys.modules["streamlit"] = stub
     yield stub
     if "streamlit" in sys.modules and sys.modules["streamlit"] is stub:
@@ -79,6 +107,8 @@ def app_module(streamlit_stub):
     import pathlib
 
     path = pathlib.Path(__file__).resolve().parents[1] / "app" / "app.py"
+    if not path.exists():
+        path = pathlib.Path(__file__).resolve().parent / "app.py"
     spec = importlib.util.spec_from_file_location("localrag_app", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

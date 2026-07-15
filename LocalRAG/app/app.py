@@ -27,6 +27,9 @@ embed_fn = embedding_functions.OllamaEmbeddingFunction(
     url=f"{OLLAMA_BASE_URL}/api/embeddings",
     model_name=EMBED_MODEL,
 )
+# Client bound to the configured Ollama host (resolves the compose service
+# name `ollama` inside the container; localhost on a host-run stack).
+ollama_client = ollama.Client(host=OLLAMA_BASE_URL)
 collection = chroma_client.get_or_create_collection(
     name=COLLECTION, embedding_function=embed_fn
 )
@@ -99,10 +102,10 @@ def ingest() -> int:
 
 
 def ensure_models():
-    local = {m.model for m in ollama.list().models}
+    local = {m.model for m in ollama_client.list().models}
     for name in (EMBED_MODEL, CHAT_MODEL):
         if name not in local:
-            ollama.pull(name)
+            ollama_client.pull(name)
 
 
 def retrieve(question: str, filename: str | None):
@@ -133,7 +136,7 @@ def answer(question: str, filename: str | None):
         {context}
         Question: {question}
     """)
-    resp = ollama.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
+    resp = ollama_client.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
     return resp.message.content, hits
 
 

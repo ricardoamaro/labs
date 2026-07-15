@@ -185,21 +185,57 @@ def main():
     import types
 
     stub = types.ModuleType("streamlit")
-    stub.session_state = {}
+
+    class _SessionState(dict):
+        def __getattr__(self, name):
+            try:
+                return self[name]
+            except KeyError:
+                raise AttributeError(name)
+
+        def __setattr__(self, name, value):
+            self[name] = value
+
+    stub.session_state = _SessionState()
     for name in ("set_page_config", "title", "caption", "sidebar", "header",
                  "button", "success", "divider", "selectbox", "chat_message",
                  "write", "chat_input", "spinner", "expander", "markdown"):
         setattr(stub, name, lambda *a, **k: None)
-    stub.sidebar = types.SimpleNamespace(
-        header=lambda *a, **k: None, button=lambda *a, **k: None,
-        success=lambda *a, **k: None, divider=lambda *a, **k: None,
-        selectbox=lambda *a, **k: "All")
+    class _Ctx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    class _Sidebar(_Ctx):
+        def header(self, *a, **k):
+            return None
+
+        def button(self, *a, **k):
+            return None
+
+        def success(self, *a, **k):
+            return None
+
+        def divider(self, *a, **k):
+            return None
+
+        def selectbox(self, *a, **k):
+            return "All"
+
+    stub.sidebar = _Sidebar()
     sys.modules["streamlit"] = stub
 
-    spec = importlib.util.spec_from_file_location(
-        "localrag_app",
-        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                     "app", "app.py"))
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    # Host layout: LocalRAG/app/app.py. Image layout: /app/app.py.
+    candidates = [
+        os.path.join(repo_root, "app", "app.py"),
+        os.path.join(repo_root, "app.py"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.py"),
+    ]
+    app_path = next((p for p in candidates if os.path.exists(p)), candidates[0])
+    spec = importlib.util.spec_from_file_location("localrag_app", app_path)
     app = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(app)
 
