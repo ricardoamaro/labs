@@ -1,0 +1,49 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  chroma:
+    image: chromadb/chroma:latest
+    container_name: rag-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma-data:/chroma/chroma
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rag-app
+    depends_on:
+      ollama:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      CHROMA_BASE_URL: http://chroma:8000
+      EMBED_MODEL: qwen3-embedding
+      CHAT_MODEL: qwen3.5
+      DOCS_DIR: /app/docs
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./docs:/app/docs
+    restart: unless-stopped
+
+volumes:
+  ollama-data:
+  chroma-data:
