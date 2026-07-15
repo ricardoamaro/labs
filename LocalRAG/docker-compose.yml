@@ -49,10 +49,11 @@ services:
       EMBED_MODEL: qwen3-embedding
       CHAT_MODEL: qwen3.5:9b
       DOCS_DIR: /app/docs
-    ports:
-      - "8501:8501"
     volumes:
       - ./docs:/app/docs
+      - ./tests:/app/tests   # benchmark + chunking tests, no docker cp needed
+    ports:
+      - "8501:8501"
     restart: unless-stopped
 
 volumes:

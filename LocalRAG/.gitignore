@@ -9,3 +9,7 @@ tests/results/
 # benchmark output (keep dir)
 tests/results/
 !tests/results/.gitkeep
+
+# pytest cache
+.pytest_cache/
+__pycache__/

@@ -145,6 +145,30 @@ docker exec -e LOCALRAG_COMPOSE=1 rag-app python3 tests/benchmark.py \
 Note: `rag-app` is recreated by `docker compose up`, wiping copied tests;
 re-copy after each `up`. Better: mount ./tests into the app service (TODO).
 
+## Benchmark result (qwen3:0.6b, 522 MB, 100% GPU on APU)
+
+Ran 8 Q&A from tests/corpus.py through retrieve()->answer() on the live
+stack. Aggregate:
+
+| metric              | value |
+|---------------------|-------|
+| retrieval_recall@8  | 0.875 |
+| citation_accuracy   | 1.0   |
+| faithfulness        | 0.659 |
+| retrieve_latency_ms | 522   |
+| generate_latency_ms | 17192 (includes iGPU warmup) |
+| answer_length       | 197   |
+
+Observations:
+- Hybrid retrieval found the gold chunk in 7/8 questions (the miss was the
+  "lexical" question — BM25+vector still missed one expected hint).
+- citation_accuracy 1.0: every [n] mapped to a real retrieved chunk.
+- generate_latency is high because the Radeon 780M iGPU is slow on first
+  generation; the 0.6B model is also weak, so answers are short. A 9B model
+  is more accurate but ~9 min for the first reply (see Runtime findings).
+- The harness works. Next: mount ./tests into rag-app so no docker cp, and
+  add a per-question timeout so a slow model can't hang the whole run.
+
 ## Next
 
 - Make the benchmark resilient: per-question timeout, run in background,
