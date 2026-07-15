@@ -218,7 +218,8 @@ def main():
     stub.session_state = _SessionState()
     for name in ("set_page_config", "title", "caption", "sidebar", "header",
                  "button", "success", "divider", "selectbox", "chat_message",
-                 "write", "chat_input", "spinner", "expander", "markdown"):
+                 "write", "chat_input", "spinner", "expander", "markdown",
+                 "subheader"):
         setattr(stub, name, lambda *a, **k: None)
     class _Ctx:
         def __enter__(self):

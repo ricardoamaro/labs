@@ -65,7 +65,7 @@ def streamlit_stub():
     for name in (
         "set_page_config", "title", "caption", "sidebar", "header", "button",
         "success", "divider", "selectbox", "chat_message", "write", "chat_input",
-        "spinner", "expander", "markdown", "caption",
+        "spinner", "expander", "markdown", "subheader",
     ):
         setattr(stub, name, lambda *a, **k: None)
     # Attribute-style access for `with st.sidebar:` etc.

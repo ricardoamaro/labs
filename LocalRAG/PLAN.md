@@ -56,14 +56,16 @@ Streamlit) with:
 First run (cold) had generate_latency ~17s; warmed run ~5s. The 0.6B model
 is weak but proves the pipeline + metrics work end-to-end on GPU.
 
-## 3. Current in-progress (uncommitted)
+## 3. Committed since last plan write
 
-- `tests/benchmark.py` — added per-question threaded timeout
-  (`_timed_answer`, 300s) so a slow model can't hang the whole run.
-- `docker-compose.yml` — mounts `./tests:/app/tests` into rag-app so no
-  `docker cp` is needed; removed duplicate `volumes` key.
-- `LOG.md` — benchmark result + runtime findings added.
-- Pending commit + push after this PLAN is written.
+- `tests/benchmark.py` — per-question threaded timeout (`_timed_answer`, 300s)
+  so a slow APU model can't hang the whole run.
+- `docker-compose.yml` — mounts `./tests:/app/tests` into rag-app (no
+  `docker cp`); duplicate `volumes` key removed.
+- `LOG.md` — benchmark result + APU runtime findings.
+- `.gitignore` — ignore `.pytest_cache/`, `__pycache__/`.
+- `PLAN.md` — this file.
+- All pushed to GitLab + GitHub (commit `ff876e2`).
 
 ## 4. Known issues / constraints
 
@@ -80,11 +82,12 @@ is weak but proves the pipeline + metrics work end-to-end on GPU.
 
 ## 5. NEXT STEPS (in order)
 
-1. **Commit + push** the in-progress changes (benchmark timeout, tests
-   mount, LOG update) to GitLab + GitHub. (Do this now.)
+1. ~~**Commit + push** the in-progress changes (benchmark timeout, tests
+   mount, LOG update) to GitLab + GitHub.~~ DONE (`ff876e2`).
 2. **Add a chat-model selector to the UI** (sidebar dropdown of available
    Ollama models) so users can switch qwen3.5:9b / gemma4 / etc. live
-   without env vars. Default to qwen3.5:9b.
+   without env vars. Default to qwen3.5:9b. **DONE** — sidebar dropdown
+   lists pulled chat models, `answer()` reads `st.session_state.chat_model`.
 3. **Document metrics in README** — add a "Metrics reference" table
    (already drafted in benchmark.py docstring) so the benchmark output is
    self-explanatory.

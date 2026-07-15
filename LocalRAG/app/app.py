@@ -136,13 +136,15 @@ def answer(question: str, filename: str | None):
         {context}
         Question: {question}
     """)
-    resp = ollama_client.chat(model=CHAT_MODEL, messages=[{"role": "user", "content": prompt}])
+    model = st.session_state.get("chat_model", CHAT_MODEL) if "st" in globals() else CHAT_MODEL
+    resp = ollama_client.chat(model=model, messages=[{"role": "user", "content": prompt}])
     return resp.message.content, hits
 
 
+active_model = st.session_state.get("chat_model", CHAT_MODEL)
 st.set_page_config(page_title="Local RAG Notebook", layout="wide")
 st.title("Local RAG Notebook")
-st.caption(f"embed: {EMBED_MODEL} · chat: {CHAT_MODEL} · hybrid search · fully offline")
+st.caption(f"embed: {EMBED_MODEL} · chat: {active_model} · hybrid search · fully offline")
 
 with st.sidebar:
     st.header("Setup")
@@ -156,6 +158,20 @@ with st.sidebar:
     st.divider()
     filenames = ["All"] + sorted({m["filename"] for m in collection.get()["metadatas"] or []})
     st.session_state.filename_filter = st.selectbox("Filter by document", filenames)
+
+    st.divider()
+    st.subheader("Chat model")
+    try:
+        available = sorted({m.model for m in ollama_client.list().models})
+    except Exception:  # noqa: BLE001
+        available = []
+    chat_models = [m for m in available if m != EMBED_MODEL] or [CHAT_MODEL]
+    if "chat_model" not in st.session_state:
+        st.session_state.chat_model = CHAT_MODEL if CHAT_MODEL in chat_models else chat_models[0]
+    st.session_state.chat_model = st.selectbox(
+        "Active model", chat_models, index=chat_models.index(st.session_state.chat_model)
+    )
+    st.caption(f"embed: {EMBED_MODEL}")
 
 if "history" not in st.session_state:
     st.session_state.history = []
