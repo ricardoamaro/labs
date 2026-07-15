@@ -1,11 +1,22 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    # ROCm image required for AMD GPU (CPU-only on :latest). The gfx override
+    # and iGPU enable let Ollama use the Radeon 780M APU (gfx1103 -> gfx1100).
+    image: ollama/ollama:rocm
     container_name: rag-ollama
     ports:
       - "11434:11434"
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - "105" # render
+      - "44"  # video
     volumes:
       - ollama-data:/root/.ollama
+    environment:
+      HSA_OVERRIDE_GFX_VERSION: "11.0.0"
+      OLLAMA_IGPU_ENABLE: "1"
     healthcheck:
       test: ["CMD", "ollama", "list"]
       interval: 10s
@@ -36,7 +47,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       CHROMA_BASE_URL: http://chroma:8000
       EMBED_MODEL: qwen3-embedding
-      CHAT_MODEL: qwen3.6
+      CHAT_MODEL: qwen3.5:9b
       DOCS_DIR: /app/docs
     ports:
       - "8501:8501"

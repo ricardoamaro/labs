@@ -30,11 +30,31 @@ to the cloud.
 | Layer      | Tool                          |
 |------------|-------------------------------|
 | Embeddings | Ollama `qwen3-embedding`     |
-| Chat       | Ollama `qwen3.6` (configurable) |
+| Chat       | Ollama `qwen3.5:9b` (configurable) |
 | Vector DB  | Chroma                        |
 | UI         | Streamlit                     |
 
-Tested with: `chromadb>=1.5.9`, `streamlit>=1.59.2`, `ollama>=0.6.2`.
+Tested with: `chromadb>=1.5.9`, `streamlit>=1.59.2`, `ollama>=0.6.2`,
+`ollama/ollama:rocm`.
+
+## GPU on AMD APUs (important)
+
+This lab is verified on an **AMD Ryzen 7 8700G with Radeon 780M (gfx1103)**.
+Ollama's default image runs on CPU only on this hardware. The compose file
+uses `ollama/ollama:rocm` plus these settings so inference runs on the APU:
+
+- `--device /dev/kfd --device /dev/dri` and `--group-add 105 --group-add 44`
+  (render + video groups) so the container can reach the GPU.
+- `HSA_OVERRIDE_GFX_VERSION=11.0.0` — tricks ROCm into treating gfx1103 as
+  the supported gfx1100.
+- `OLLAMA_IGPU_ENABLE=1` — Ollama disables integrated GPUs by default.
+
+Confirm it works with `docker exec rag-ollama ollama ps` — the chat model
+should report `100% GPU`, not `100% CPU`.
+
+**Model size:** an APU shares system RAM as VRAM. Use 9B-class (or smaller)
+chat models for full GPU offload; very large models can exhaust memory. The
+default `qwen3.5:9b` (6.6 GB) offloads 34/34 layers to the APU.
 
 ## Run
 

@@ -12,7 +12,7 @@ import ollama
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 CHROMA_BASE_URL = os.getenv("CHROMA_BASE_URL", "http://localhost:8000")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "qwen3-embedding")
-CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen3.6")
+CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen3.5:9b")
 DOCS_DIR = os.getenv("DOCS_DIR", "/app/docs")
 COLLECTION = "lab_docs"
 CHUNK_CHARS = 800
