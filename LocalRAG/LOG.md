@@ -69,9 +69,9 @@ GPU detection line (success):
 
 LM Studio uses Mesa RADV on the same APU and handles MUCH more RAM for GPU:
 - Favorite small model: `Qwen3.5-9B-Q4_K_M` = 6.5 GB -> works great.
-  Path: /home/ricardo/.lmstudio/models/lmstudio-community/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
+  Path: ~/.lmstudio/models/lmstudio-community/Qwen3.5-9B-GGUF/Qwen3.5-9B-Q4_K_M.gguf
 - Larger: `gemma-4-26B-A4B-it-QAT-Q4_0` = 15.6 GB -> works.
-  Path: /home/ricardo/.lmstudio/models/lmstudio-community/gemma-4-26B-A4B-it-QAT-GGUF/gemma-4-26B-A4B-it-QAT-Q4_0.gguf
+  Path: ~/.lmstudio/models/lmstudio-community/gemma-4-26B-A4B-it-QAT-GGUF/gemma-4-26B-A4B-it-QAT-Q4_0.gguf
 - User has pushed ~50 GB through LM Studio on this APU with no crash.
 
 Conclusion: the earlier machine crash was Ollama's own iGPU memory handling
