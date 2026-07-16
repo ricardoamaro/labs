@@ -147,37 +147,40 @@ re-copy after each `up`. Better: mount ./tests into the app service (TODO).
 ## Benchmark result (qwen3:0.6b, 522 MB, 100% GPU on APU)
 
 Ran 8 Q&A from tests/corpus.py through retrieve()->answer() on the live
-stack. Aggregate:
+stack. Aggregate (after the model-param bug fix, see below):
 
 | metric              | value |
 |---------------------|-------|
 | retrieval_recall@8  | 0.875 |
 | citation_accuracy   | 1.0   |
-| faithfulness        | 0.659 |
-| retrieve_latency_ms | 522   |
-| generate_latency_ms | 17192 (includes iGPU warmup) |
-| answer_length       | 197   |
+| faithfulness        | 0.651 |
+| retrieve_latency_ms | 240.1 |
+| generate_latency_ms | 5510.9 (warmed; first run includes iGPU warmup) |
+| answer_length       | 235   |
+
+### Bug: model=None in benchmark (FIXED)
+First multi-model run returned identical `[ERROR] 1 validation error for
+ChatRequest model ... Input should be a valid string` for ALL models, with
+faithfulness 0.043 and identical length 220. Root cause: `answer()` built the
+model from `st.session_state.get("chat_model", CHAT_MODEL)` which resolved to
+None in the benchmark context. Fixed by giving `answer(question, filename,
+model=None)` an explicit model param; UI passes `st.session_state.chat_model`,
+benchmark passes the loop model. After the fix, real model-specific answers
+return and faithfulness is ~0.65.
 
 Observations:
 - Hybrid retrieval found the gold chunk in 7/8 questions (the miss was the
   "lexical" question — BM25+vector still missed one expected hint).
 - citation_accuracy 1.0: every [n] mapped to a real retrieved chunk.
-- generate_latency is high because the Radeon 780M iGPU is slow on first
-  generation; the 0.6B model is also weak, so answers are short. A 9B model
-  is more accurate but ~9 min for the first reply (see Runtime findings).
-- The harness works. Next: mount ./tests into rag-app so no docker cp, and
-  add a per-question timeout so a slow model can't hang the whole run.
+- generate_latency is high because the Radeon 780M iGPU is slow on generation;
+  the 0.6B model is also weak. A 9B model is more accurate but ~9 min for the
+  first reply (see Runtime findings).
+- Do NOT run two benchmark processes at once — they contend for the single
+  APU and both stall. One run at a time.
 
-## Next
-
-- Make the benchmark resilient: per-question timeout, run in background,
-  smaller default model for the APU.
-- Mount ./tests into rag-app via compose so no docker cp is needed.
-- Optionally add a chat-model selector to the UI.
-
-## Next
-
-- Find a working small chat model tag, pull it, run, confirm `ollama ps`
-  shows GPU (not 100% CPU) without crashing.
-- Update LocalRAG docker-compose.yml to use `ollama/ollama:rocm` + the env
-  vars + group_add, and document the APU constraint in README.
+## Status
+- GPU config, chunking tests (5 pass), benchmark harness, UI model selector,
+  metrics docs, and the model-param fix are all done locally. Awaiting user
+  commit/push.
+- Multi-model comparison (qwen3:0.6b vs gemma4:latest vs qwen3.5:9b) in
+  progress; 9B model is very slow on the iGPU.

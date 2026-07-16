@@ -121,7 +121,7 @@ def retrieve(question: str, filename: str | None):
     return list(zip(docs, metas, dists))
 
 
-def answer(question: str, filename: str | None):
+def answer(question: str, filename: str | None, model: str | None = None):
     hits = retrieve(question, filename)
     if not hits:
         return "No relevant chunks found. Try ingesting docs or broadening the filter.", []
@@ -136,7 +136,8 @@ def answer(question: str, filename: str | None):
         {context}
         Question: {question}
     """)
-    model = st.session_state.get("chat_model", CHAT_MODEL) if "st" in globals() else CHAT_MODEL
+    if model is None:
+        model = st.session_state.get("chat_model", CHAT_MODEL)
     resp = ollama_client.chat(model=model, messages=[{"role": "user", "content": prompt}])
     return resp.message.content, hits
 
@@ -185,7 +186,7 @@ if q := st.chat_input("Ask your documents anything"):
     with st.chat_message("assistant"):
         with st.spinner("Thinking locally..."):
             try:
-                a, hits = answer(q, st.session_state.get("filename_filter", "All"))
+                a, hits = answer(q, st.session_state.get("filename_filter", "All"), model=st.session_state.get("chat_model", CHAT_MODEL))
             except Exception as e:  # noqa: BLE001
                 a, hits = f"Error: {e}", []
         st.write(a)

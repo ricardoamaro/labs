@@ -112,7 +112,7 @@ def _citation_validity(answer_text, n_hits):
     return valid / len(markers)
 
 
-def _timed_answer(app, q, timeout_s=300):
+def _timed_answer(app, q, model, timeout_s=300):
     """Call app.answer in a thread so one slow model can't hang the run."""
     import threading
 
@@ -120,7 +120,7 @@ def _timed_answer(app, q, timeout_s=300):
 
     def _run():
         try:
-            result["text"], _ = app.answer(q, "All")
+            result["text"], _ = app.answer(q, "All", model=model)
             result["ok"] = True
         except Exception as e:  # noqa: BLE001
             result["text"] = f"[ERROR] {e}"
@@ -145,7 +145,7 @@ def run_model(app, model, ingest_ts):
         t_retrieve = (time.perf_counter() - t0) * 1000.0
 
         t1 = time.perf_counter()
-        answer_text = _timed_answer(app, q)
+        answer_text = _timed_answer(app, q, model)
         t_generate = (time.perf_counter() - t1) * 1000.0
 
         context_blob = "\n".join(d for d, _, _ in hits)

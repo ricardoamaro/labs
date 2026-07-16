@@ -88,13 +88,14 @@ is weak but proves the pipeline + metrics work end-to-end on GPU.
    Ollama models) so users can switch qwen3.5:9b / gemma4 / etc. live
    without env vars. Default to qwen3.5:9b. **DONE** — sidebar dropdown
    lists pulled chat models, `answer()` reads `st.session_state.chat_model`.
-3. **Document metrics in README** — add a "Metrics reference" table
-   (already drafted in benchmark.py docstring) so the benchmark output is
-   self-explanatory.
-4. **Benchmark more models** on the APU: run against qwen3.5:9b AND
-   gemma4:latest (or gemma4:26b-a4b-it-qat if it fits) and compare the
-   metrics table. Use a smaller model for the automated sweep; spot-check
-   9B manually.
+3. **Document metrics in README** — "Metrics reference" section added with
+   metric definitions + a multi-model example result; fixed stale model table
+   (was pointing at the crashing qwen3.6). **DONE.**
+4. **Benchmark more models** on the APU — compare qwen3:0.6b vs gemma4:latest
+   vs qwen3.5:9b. **DONE (fix applied + 2-model comparison verified).**
+   Results: gemma4:latest faithfulness 0.833 vs qwen3:0.6b 0.761; gemma4
+   much slower to generate on the iGPU (27.8s vs 4.3s). The 9B model is
+   accurate but ~minutes per reply — use small models for sweeps.
 5. **Add a CI workflow** (GitHub Actions) running `pytest -m "not
    benchmark"` on PRs; benchmark as an optional manual job (needs GPU).
 6. **Optional LLM-as-judge**: add an opt-in faithfulness/relevance judge
