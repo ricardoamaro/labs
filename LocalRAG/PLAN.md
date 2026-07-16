@@ -48,13 +48,15 @@ Streamlit) with:
 |---------------------|-------|
 | retrieval_recall@8  | 0.875 |
 | citation_accuracy   | 1.0   |
-| faithfulness        | 0.676 |
+| faithfulness        | 0.651 |
 | retrieve_latency_ms | 240.5 |
 | generate_latency_ms | 5088.8 |
 | answer_length       | 168   |
 
 First run (cold) had generate_latency ~17s; warmed run ~5s. The 0.6B model
-is weak but proves the pipeline + metrics work end-to-end on GPU.
+is weak but proves the pipeline + metrics work end-to-end on GPU. (Multi-model
+table with gemma4:latest is in README; the 9B model was NOT benchmarked
+end-to-end — see constraints.)
 
 ## 3. Committed since last plan write
 
@@ -91,11 +93,13 @@ is weak but proves the pipeline + metrics work end-to-end on GPU.
 3. **Document metrics in README** — "Metrics reference" section added with
    metric definitions + a multi-model example result; fixed stale model table
    (was pointing at the crashing qwen3.6). **DONE.**
-4. **Benchmark more models** on the APU — compare qwen3:0.6b vs gemma4:latest
-   vs qwen3.5:9b. **DONE (fix applied + 2-model comparison verified).**
-   Results: gemma4:latest faithfulness 0.833 vs qwen3:0.6b 0.761; gemma4
-   much slower to generate on the iGPU (27.8s vs 4.3s). The 9B model is
-   accurate but ~minutes per reply — use small models for sweeps.
+ 4. **Benchmark more models** on the APU — compare qwen3:0.6b vs gemma4:latest
+    (both verified, 2-model table in README + LOG). **DONE for 2 models.**
+    The `qwen3.5:9b` (9B) model was NOT run end-to-end in the benchmark: it
+    offloads 34/34 layers to GPU but the first generation takes ~9 min on the
+    Radeon 780M iGPU, so it is reserved for manual spot-checks. Results:
+    gemma4:latest faithfulness 0.833 vs qwen3:0.6b 0.651; gemma4 much slower
+    to generate on the iGPU (27.8s vs 4.3s). Use small models for sweeps.
 5. **Add a CI workflow** (GitHub Actions) running `pytest -m "not
    benchmark"` on PRs; benchmark as an optional manual job (needs GPU).
 6. **Optional LLM-as-judge**: add an opt-in faithfulness/relevance judge

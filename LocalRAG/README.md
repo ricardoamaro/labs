@@ -156,11 +156,11 @@ docker exec -e LOCALRAG_COMPOSE=1 rag-app python3 tests/benchmark.py --models qw
 
 | model | retrieval_recall@8 | citation_accuracy | faithfulness | retrieve_ms | generate_ms | answer_len |
 |-------|---------------------|-------------------|-------------|------------|-------------|------------|
-| qwen3:0.6b | 0.875 | 1.0 | 0.761 | 238 | 4,256 | 195 |
+| qwen3:0.6b | 0.875 | 1.0 | 0.651 | 240 | 5,511 | 235 |
 | gemma4:latest | 0.875 | 1.0 | 0.833 | 1,717 | 27,840 | 174 |
 
 Both retrieve the same gold chunks and cite perfectly. `gemma4:latest` is
-more faithful (0.833 vs 0.761) but far slower to generate on the Radeon 780M
+more faithful (0.833 vs 0.651) but far slower to generate on the Radeon 780M
 iGPU (27.8 s vs 4.3 s per answer). Use a small model for fast sweeps; spot-
 check larger models manually (they can take minutes per reply on the APU).
 

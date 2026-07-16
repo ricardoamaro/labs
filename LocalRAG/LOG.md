@@ -182,5 +182,6 @@ Observations:
 - GPU config, chunking tests (5 pass), benchmark harness, UI model selector,
   metrics docs, and the model-param fix are all done locally. Awaiting user
   commit/push.
-- Multi-model comparison (qwen3:0.6b vs gemma4:latest vs qwen3.5:9b) in
-  progress; 9B model is very slow on the iGPU.
+- Multi-model comparison: 2 models verified (qwen3:0.6b vs gemma4:latest).
+  9B model (qwen3.5:9b) is verified for GPU offload only, not benchmarked
+  end-to-end (too slow on the iGPU).

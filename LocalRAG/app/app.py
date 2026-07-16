@@ -18,6 +18,10 @@ COLLECTION = "lab_docs"
 CHUNK_CHARS = 800
 OVERLAP_CHARS = 100
 TOP_K = 8
+ALL_DOCS = "All"
+SESSION_FILENAME = "filename_filter"
+SESSION_CHAT_MODEL = "chat_model"
+SESSION_HISTORY = "history"
 
 chroma_client = chromadb.HttpClient(
     host=CHROMA_BASE_URL.split("//")[-1].split(":")[0],
@@ -109,7 +113,7 @@ def ensure_models():
 
 
 def retrieve(question: str, filename: str | None):
-    where = {"filename": filename} if filename and filename != "All" else None
+    where = {"filename": filename} if filename and filename != ALL_DOCS else None
     results = collection.query(
         query_texts=[question],
         n_results=TOP_K,
@@ -137,12 +141,17 @@ def answer(question: str, filename: str | None, model: str | None = None):
         Question: {question}
     """)
     if model is None:
-        model = st.session_state.get("chat_model", CHAT_MODEL)
+        if SESSION_CHAT_MODEL in st.session_state:
+            model = st.session_state[SESSION_CHAT_MODEL]
+        elif "st" in globals():
+            model = st.session_state.get("chat_model", CHAT_MODEL)
+        else:
+            model = CHAT_MODEL
     resp = ollama_client.chat(model=model, messages=[{"role": "user", "content": prompt}])
     return resp.message.content, hits
 
 
-active_model = st.session_state.get("chat_model", CHAT_MODEL)
+active_model = st.session_state.get(SESSION_CHAT_MODEL, CHAT_MODEL)
 st.set_page_config(page_title="Local RAG Notebook", layout="wide")
 st.title("Local RAG Notebook")
 st.caption(f"embed: {EMBED_MODEL} · chat: {active_model} · hybrid search · fully offline")
@@ -157,8 +166,8 @@ with st.sidebar:
         n = ingest()
         st.success(f"Ingested {n} chunks from {DOCS_DIR}")
     st.divider()
-    filenames = ["All"] + sorted({m["filename"] for m in collection.get()["metadatas"] or []})
-    st.session_state.filename_filter = st.selectbox("Filter by document", filenames)
+    filenames = [ALL_DOCS] + sorted({m["filename"] for m in collection.get()["metadatas"] or []})
+    st.session_state[SESSION_FILENAME] = st.selectbox("Filter by document", filenames)
 
     st.divider()
     st.subheader("Chat model")
@@ -167,26 +176,33 @@ with st.sidebar:
     except Exception:  # noqa: BLE001
         available = []
     chat_models = [m for m in available if m != EMBED_MODEL] or [CHAT_MODEL]
-    if "chat_model" not in st.session_state:
-        st.session_state.chat_model = CHAT_MODEL if CHAT_MODEL in chat_models else chat_models[0]
-    st.session_state.chat_model = st.selectbox(
-        "Active model", chat_models, index=chat_models.index(st.session_state.chat_model)
+    if SESSION_CHAT_MODEL not in st.session_state:
+        st.session_state[SESSION_CHAT_MODEL] = (
+            CHAT_MODEL if CHAT_MODEL in chat_models else chat_models[0]
+        )
+    st.session_state[SESSION_CHAT_MODEL] = st.selectbox(
+        "Active model", chat_models,
+        index=chat_models.index(st.session_state[SESSION_CHAT_MODEL]),
     )
     st.caption(f"embed: {EMBED_MODEL}")
 
-if "history" not in st.session_state:
-    st.session_state.history = []
+if SESSION_HISTORY not in st.session_state:
+    st.session_state[SESSION_HISTORY] = []
 
-for role, msg in st.session_state.history:
+for role, msg in st.session_state[SESSION_HISTORY]:
     st.chat_message(role).write(msg)
 
 if q := st.chat_input("Ask your documents anything"):
     st.chat_message("user").write(q)
-    st.session_state.history.append(("user", q))
+    st.session_state[SESSION_HISTORY].append(("user", q))
     with st.chat_message("assistant"):
         with st.spinner("Thinking locally..."):
             try:
-                a, hits = answer(q, st.session_state.get("filename_filter", "All"), model=st.session_state.get("chat_model", CHAT_MODEL))
+                a, hits = answer(
+                    q,
+                    st.session_state.get(SESSION_FILENAME, ALL_DOCS),
+                    model=st.session_state.get(SESSION_CHAT_MODEL, CHAT_MODEL),
+                )
             except Exception as e:  # noqa: BLE001
                 a, hits = f"Error: {e}", []
         st.write(a)

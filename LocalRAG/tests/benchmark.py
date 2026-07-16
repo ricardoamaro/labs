@@ -63,8 +63,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from corpus import QUESTIONS  # noqa: E402
 
 DEFAULT_MODELS = [
-    "qwen3.6",
-    "gemma4:26b-a4b-it-qat",
+    "qwen3:0.6b",
     "gemma4:latest",
 ]
 
@@ -120,7 +119,7 @@ def _timed_answer(app, q, model, timeout_s=300):
 
     def _run():
         try:
-            result["text"], _ = app.answer(q, "All", model=model)
+            result["text"], _ = app.answer(q, app.ALL_DOCS, model=model)
             result["ok"] = True
         except Exception as e:  # noqa: BLE001
             result["text"] = f"[ERROR] {e}"
@@ -141,7 +140,7 @@ def run_model(app, model, ingest_ts):
     for item in QUESTIONS:
         q = item["question"]
         t0 = time.perf_counter()
-        hits = app.retrieve(q, "All")
+        hits = app.retrieve(q, app.ALL_DOCS)
         t_retrieve = (time.perf_counter() - t0) * 1000.0
 
         t1 = time.perf_counter()
