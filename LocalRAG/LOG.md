@@ -1,8 +1,7 @@
 # LocalRAG — GPU / Ollama on AMD APU investigation log
 
 This log records the live debugging of getting Ollama to use the AMD Radeon
-780M (Ryzen 7 8700G) APU instead of CPU, for the LocalRAG lab. Written as a
-human would while exploring, so future runs can skip the dead ends.
+780M (Ryzen 7 8700G) APU instead of CPU, for the LocalRAG lab.
 
 ## Hardware
 
@@ -66,7 +65,7 @@ GPU detection line (success):
 - gemma4:26b-a4b-it-qat -> 15 GB
 - gemma4:latest -> 9.6 GB
 
-## Reality check from user (LM Studio, host)
+## Reality check (LM Studio, host)
 
 LM Studio uses Mesa RADV on the same APU and handles MUCH more RAM for GPU:
 - Favorite small model: `Qwen3.5-9B-Q4_K_M` = 6.5 GB -> works great.
